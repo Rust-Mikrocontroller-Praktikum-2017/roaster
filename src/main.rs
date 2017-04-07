@@ -5,7 +5,8 @@ extern crate stm32f7_discovery as stm32f7;
 
 extern crate r0;
 
-use stm32f7::{system_clock,board,embedded};
+use stm32f7::{system_clock,board,embedded,sdram,lcd};
+use stm32f7::lcd::*;
 
 #[no_mangle]
 pub unsafe extern "C" fn reset() {
@@ -35,7 +36,7 @@ pub unsafe extern "C" fn reset() {
 
 #[no_mangle]
 #[inline(never)]
-fn main(hw: board::Hardware) {
+fn main(hw: board::Hardware) -> ! {
 
     let board::Hardware {
         rcc,
@@ -92,6 +93,22 @@ fn main(hw: board::Hardware) {
         r.set_gpiojen(true);
         r.set_gpioken(true);
     });
+
+    // init sdram (needed for display buffer)
+    sdram::init(rcc, fmc, &mut gpio);
+
+    // lcd controller
+    let mut lcd = lcd::init(ltdc, rcc, &mut gpio);
+    lcd.clear_screen();
+
+    lcd.set_background_color(Color::from_hex(0xff0000));
+
+    lcd.draw_point_color(Point{x:100,y:100}, Layer::Layer1, Color::from_hex(0x00ff00).to_argb1555());
+
+    lcd.fill_rect_color(Rect{origin:Point{x:200,y:100},width:100,height:100}, Layer::Layer1, Color::from_hex(0x0000ff).to_argb1555());
+
+
+    loop {}
 
 }
 
