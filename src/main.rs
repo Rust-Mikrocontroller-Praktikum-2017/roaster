@@ -104,7 +104,7 @@ fn main(hw: board::Hardware) -> ! {
 
     lcd.set_background_color(Color::from_hex(0x000000));
 
-    let plot = plot::Plot{last_measurement: model::TimeTemp{time: 0, temp: 0}};
+    let mut plot = plot::Plot{last_measurement: model::TimeTemp{time: 0, temp: 0}};
 
     plot.draw_axis(&mut lcd);
 
@@ -117,8 +117,11 @@ fn main(hw: board::Hardware) -> ! {
         if ticks - last_led_toggle >= 500 {
             last_led_toggle = ticks;
             let val = spi_read(spi_2);
-            lcd.fill_rect_color(lcd::LCD_SIZE, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
-            lcd.draw_line_color(Line{from:Point{x:0,y:100}, to:Point{x:val/5, y:100}}, Layer::Layer2, Color::from_hex(0xff0000).to_argb1555());
+            let measurement = model::TimeTemp{
+                time: ticks,
+                temp: val
+            };
+            plot.add_measurement(measurement, &mut lcd);
         }
 
     }
