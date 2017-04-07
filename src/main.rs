@@ -5,8 +5,15 @@ extern crate stm32f7_discovery as stm32f7;
 
 extern crate r0;
 
+pub mod plot;
+pub mod model;
+
 use stm32f7::{system_clock,board,embedded,sdram,lcd};
 use stm32f7::lcd::*;
+use embedded::interfaces::gpio;
+use embedded::interfaces::gpio::{Gpio};
+use board::spi::Spi;
+use board::rcc::Rcc;
 
 #[no_mangle]
 pub unsafe extern "C" fn reset() {
@@ -53,10 +60,10 @@ fn main(hw: board::Hardware) -> ! {
         gpio_i,
         gpio_j,
         gpio_k,
+        spi_2,
         ..
     } = hw;
 
-    use embedded::interfaces::gpio::{Gpio};
     let mut gpio = Gpio::new(gpio_a,
                              gpio_b,
                              gpio_c,
@@ -86,6 +93,8 @@ fn main(hw: board::Hardware) -> ! {
         r.set_gpioken(true);
     });
 
+    spi_init(&mut gpio, spi_2, rcc);
+
     // init sdram (needed for display buffer)
     sdram::init(rcc, fmc, &mut gpio);
 
@@ -93,15 +102,113 @@ fn main(hw: board::Hardware) -> ! {
     let mut lcd = lcd::init(ltdc, rcc, &mut gpio);
     lcd.clear_screen();
 
-    lcd.set_background_color(Color::from_hex(0xff0000));
+    lcd.set_background_color(Color::from_hex(0x000000));
 
-    lcd.draw_point_color(Point{x:100,y:100}, Layer::Layer1, Color::from_hex(0x00ff00).to_argb1555());
+    let plot = plot::Plot{last_measurement: model::TimeTemp{time: 0, temp: 0}};
 
-    lcd.fill_rect_color(Rect{origin:Point{x:200,y:100},width:100,height:100}, Layer::Layer1, Color::from_hex(0x0000ff).to_argb1555());
+    plot.draw_axis(&mut lcd);
 
+    let mut last_led_toggle = system_clock::ticks();
+    loop {
+        
+        let ticks = system_clock::ticks();
 
-    loop {}
+        // every 0.5 seconds
+        if ticks - last_led_toggle >= 500 {
+            last_led_toggle = ticks;
+            let val = spi_read(spi_2);
+            lcd.fill_rect_color(lcd::LCD_SIZE, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
+            lcd.draw_line_color(Line{from:Point{x:0,y:100}, to:Point{x:val/5, y:100}}, Layer::Layer2, Color::from_hex(0xff0000).to_argb1555());
+        }
+
+    }
 
 }
 
+fn spi_init(gpio: &mut Gpio, spi_2: &mut Spi, rcc: &mut Rcc) -> () {
+    //SPI Init
+    
+    rcc.apb1enr.update(|apb1enr| {
+        apb1enr.set_spi2en(true);
+    });
 
+    use embedded::util::delay;
+    delay(1);
+
+    let sck_pin = (gpio::Port::PortI, gpio::Pin::Pin1);
+    let miso_pin = (gpio::Port::PortB, gpio::Pin::Pin14);
+    let mosi_pin = (gpio::Port::PortB, gpio::Pin::Pin15);
+    let nss_pin = (gpio::Port::PortI, gpio::Pin::Pin0);
+
+    let sck = gpio.to_alternate_function(sck_pin,
+                                         gpio::AlternateFunction::AF5,
+                                         gpio::OutputType::PushPull,
+                                         gpio::OutputSpeed::High,
+                                         gpio::Resistor::NoPull)
+        .expect("Could not configure sck");
+    let mosi = gpio.to_alternate_function(mosi_pin,
+                                         gpio::AlternateFunction::AF5,
+                                         gpio::OutputType::PushPull,
+                                         gpio::OutputSpeed::High,
+                                         gpio::Resistor::NoPull)
+        .expect("Could not configure mosi");
+    /*let miso = gpio.to_input(miso_pin,
+                            gpio::Resistor::NoPull)
+        .expect("Could not configure miso");*/
+    let miso = gpio.to_alternate_function(miso_pin,
+                                         gpio::AlternateFunction::AF5,
+                                         gpio::OutputType::PushPull,
+                                         gpio::OutputSpeed::High,
+                                         gpio::Resistor::NoPull);
+
+    let my_nss_pin = (gpio::Port::PortI, gpio::Pin::Pin2);
+    let nss = gpio.to_alternate_function(nss_pin,
+                                        gpio::AlternateFunction::AF5,
+                                        gpio::OutputType::PushPull,
+                                        gpio::OutputSpeed::High,
+                                        gpio::Resistor::NoPull)
+        .expect("Could not configure nss");
+        
+/*let mut nss = gpio.to_output(my_nss_pin,
+                              gpio::OutputType::PushPull,
+                              gpio::OutputSpeed::High,
+                              gpio::Resistor::NoPull)
+        .expect("Could not configure nss");*/
+
+    spi_2.cr1.update(|cr1| {
+        cr1.set_br(0b111);
+        cr1.set_cpol(false); // clock low when inactive
+        cr1.set_cpha(false); // receive on first clock transition
+        cr1.set_rxonly(false);
+        cr1.set_lsbfirst(false);
+        cr1.set_crcen(false);
+        cr1.set_mstr(true); // we are master
+        cr1.set_ssm(false); // software managed ss
+    });
+     
+    spi_2.cr2.update(|cr2| {
+        cr2.set_ds(0b1111); // 16 bit data size
+        cr2.set_ssoe(true); // enable ss
+        cr2.set_frf(false); // frame format motorola
+        cr2.set_nssp(true); // nss pulse mode
+        cr2.set_frxth(false); // RXNE event is set when rx fifo contians 16 bit
+        cr2.set_txdmaen(false); // no dma
+        cr2.set_rxdmaen(false); // no dma
+    });
+
+    spi_2.cr1.update(|cr1| {
+        cr1.set_spe(true); // SPI enable
+        //cr1.set_ssi(true);
+    });
+}
+
+fn spi_read(spi_2: &mut Spi) -> u16 {
+    spi_2.dr.update(|dr| {
+        dr.set_dr(0);   
+    });
+
+    while !spi_2.sr.read().rxne() {}
+
+    let data:u16 = spi_2.dr.read().dr();
+    return data;
+}
