@@ -34,8 +34,6 @@ pub unsafe extern "C" fn reset() {
     main(board::hw());
 }
 
-#[no_mangle]
-#[inline(never)]
 fn main(hw: board::Hardware) -> ! {
 
     let board::Hardware {
@@ -55,16 +53,10 @@ fn main(hw: board::Hardware) -> ! {
         gpio_i,
         gpio_j,
         gpio_k,
-        i2c_3,
-        sai_2,
-        syscfg,
-        ethernet_mac,
-        ethernet_dma,
-        spi_2,
         ..
     } = hw;
 
-    use embedded::interfaces::gpio::{self, Gpio};
+    use embedded::interfaces::gpio::{Gpio};
     let mut gpio = Gpio::new(gpio_a,
                              gpio_b,
                              gpio_c,
