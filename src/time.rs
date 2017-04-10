@@ -10,6 +10,9 @@ impl TickTime {
     pub fn to_msecs(&self) -> usize {
         self.source.to_msecs(self)
     }
+    pub fn to_secs(&self) -> f32 {
+        (self.to_msecs() as f32) / 1000f32
+    }
 }
 
 #[inline]
@@ -34,6 +37,7 @@ pub fn delta(a: &TickTime, b: &TickTime) -> TickTime {
 pub trait ClockSource {
     fn get_ticks(&'static self) -> TickTime;
     fn to_msecs(&'static self, ticks: &TickTime) -> usize;
+    fn to_secs(&'static self, ticks: &TickTime) -> f32;
 }
 
 pub struct SystemClock;
@@ -49,5 +53,8 @@ impl ClockSource for SystemClock {
     }
     fn to_msecs(&self, tt: &TickTime) -> usize {
         return tt.ticks;
+    }
+    fn to_secs(&self, tt: &TickTime) -> f32 {
+        return tt.to_secs()
     }
 }

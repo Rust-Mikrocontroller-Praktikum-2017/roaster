@@ -5,6 +5,7 @@ pub type Temperature = f32;
 /// Time in seconds
 pub type Time = f32;
 
+#[derive(Copy, Clone)]
 pub struct TimeTemp {
     pub time: Time,
     pub temp: Temperature,

@@ -10,6 +10,7 @@ pub mod model;
 pub mod temp_sensor;
 pub mod time;
 pub mod util;
+pub mod pid;
 
 use stm32f7::{system_clock,board,embedded,sdram,lcd,touch,i2c};
 use stm32f7::lcd::*;
@@ -144,6 +145,8 @@ fn main(hw: board::Hardware) -> ! {
 
     touch::check_family_id(&mut i2c_3).unwrap();
 
+    let mut pid_controller = pid::PIDController::new(1f32, 0.1f32, 0.5f32);
+
     let mut last_measurement = SYSCLOCK.get_ticks();
 
     let mut target = model::TimeTemp{time: 10.0f32, temp: 30.0f32};
@@ -154,16 +157,19 @@ fn main(hw: board::Hardware) -> ! {
         let ticks = SYSCLOCK.get_ticks();
 
         let delta_measurement = time::delta(&ticks, &last_measurement);
-        let delta_measurement = delta_measurement.to_msecs();
 
-        if delta_measurement >= 500 {
+        if delta_measurement.to_msecs() >= 500 {
             last_measurement = ticks;
-            let val = temp_sensor.read();
+            let val = 100f32;//temp_sensor.read();
             let measurement = model::TimeTemp{
-                time: (delta_measurement as f32) / 1000f32, // TODO just integer divide here?
+                time: ticks.to_secs(), // TODO just integer divide here?
                 temp: val as f32,
             };
             plot.add_measurement(measurement, &mut lcd);
+
+            let error = target.temp - measurement.temp;
+            let pid_value = pid_controller.cycle(error, &delta_measurement);
+            lcd.draw_point_color(plot.transform(&model::TimeTemp{time: ticks.to_secs(), temp: pid_value}), Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
         }
 
         // poll for new touch data
