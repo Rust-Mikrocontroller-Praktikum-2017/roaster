@@ -1,7 +1,6 @@
 use model::TimeTemp;
-use stm32f7::lcd;
 use stm32f7::lcd::{Lcd, Color, Layer, Point, Line, Rect};
-use model::{Range};
+use model::{Range, Time, Temperature};
 use time::{TickTime,delta};
 use util;
 
@@ -32,18 +31,22 @@ struct Drag {
     direction: DragDirection,
 }
 
-const X_PX_RANGE: Range<u16> = Range{from: 10, to: 460};
-const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 10};
+const X_PX_RANGE: Range<u16> = Range{from: 20, to: 460};
+const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 20};
+
 const X_PX_DRAG_RANGE: Rect = Rect{ // TODO
-    origin: Point{ x: 0, y: 0},
-    width: 40,
-    height: 270,
-};
-const Y_PX_DRAG_RANGE: Rect = Rect{ // TODO
-    origin: Point{ x: 40, y: 230 },
-    width: 400,
+    origin: Point{ x: 0, y: 232},
+    width: 480,
     height: 40,
 };
+const Y_PX_DRAG_RANGE: Rect = Rect{ // TODO
+    origin: Point{ x: 0, y: 0 },
+    width: 40,
+    height: 272,
+};
+
+const X_TICK_DIST: f32 = 30f32;
+const Y_TICK_DIST: f32 = 25f32;
 
 impl Plot {
     pub fn new(x_range: Range<f32>, y_range: Range<f32>) -> Plot {
@@ -57,16 +60,24 @@ impl Plot {
         // TODO assert drag_horizontal_zone and drag_vertical_zone are not overlapping
     }
 
+    fn transform_time(&self, time: Time) -> u16 {
+        ((X_PX_RANGE.from as f32) + ((X_PX_RANGE.signed_size() as f32) / self.x_range.signed_size()) * (time - self.x_range.from)) as u16
+    }
+
+    fn transform_temp(&self, temp: Temperature) -> u16 {
+        ((Y_PX_RANGE.from as f32) + ((Y_PX_RANGE.signed_size() as f32) / self.y_range.signed_size()) * (temp - self.y_range.from)) as u16
+    }
+
     pub fn transform(&self, measurement: &TimeTemp) -> Point {
         Point {
-            x: ((X_PX_RANGE.from as f32) + ((X_PX_RANGE.signed_size() as f32) / self.x_range.signed_size()) * (measurement.time - self.x_range.from)) as u16,
-            y: ((Y_PX_RANGE.from as f32) + ((Y_PX_RANGE.signed_size() as f32) / self.y_range.signed_size()) * (measurement.temp - self.y_range.from)) as u16,
+            x: self.transform_time(measurement.time),
+            y: self.transform_temp(measurement.temp),
         }
     }
 
     pub fn draw_axis(&self, lcd: &mut Lcd) {
         let axis_color = Color::from_hex(0xffffff).to_argb1555();
-        let origin_y = lcd::LCD_SIZE.height - 10;
+        let drag_color = Color::from_hex(0x222222).to_argb1555();
 
         let x_axis_line = Line {
             from: Point{x: X_PX_RANGE.from, y: Y_PX_RANGE.from},
@@ -77,16 +88,34 @@ impl Plot {
             to: Point{x: X_PX_RANGE.from, y: Y_PX_RANGE.to}
         };
 
+        lcd.fill_rect_color(Y_PX_DRAG_RANGE, Layer::Layer1, drag_color);
+        lcd.fill_rect_color(X_PX_DRAG_RANGE, Layer::Layer1, drag_color);
+
         lcd.draw_line_color(x_axis_line, Layer::Layer1, axis_color);
         lcd.draw_line_color(y_axis_line, Layer::Layer1, axis_color);
 
-        lcd.fill_rect_color(Y_PX_DRAG_RANGE, Layer::Layer1, axis_color);
-        lcd.fill_rect_color(X_PX_DRAG_RANGE, Layer::Layer1, axis_color);
+        let mut x_tick = self.x_range.from;
+        while x_tick <= self.x_range.to {
+            let x_tick_px = self.transform_time(x_tick);
+            lcd.draw_line_color(Line {
+                from: Point{x: x_tick_px, y: Y_PX_RANGE.from - 2},
+                to: Point{x: x_tick_px, y: Y_PX_RANGE.from + 2}
+            }, Layer::Layer1, axis_color);
+            x_tick += X_TICK_DIST;
+        }
 
+        let mut y_tick = self.y_range.from;
+        while y_tick <= self.y_range.to {
+            let y_tick_px = self.transform_temp(y_tick);
+            lcd.draw_line_color(Line {
+                from: Point{x: X_PX_RANGE.from - 2, y: y_tick_px},
+                to: Point{x: X_PX_RANGE.from + 2, y: y_tick_px}
+            }, Layer::Layer1, axis_color);
+            y_tick += Y_TICK_DIST;
+        }
     }
 
     pub fn add_measurement(&mut self, measurement: TimeTemp, lcd: &mut Lcd) {
-        let origin_y = lcd::LCD_SIZE.height - 10;
         lcd.draw_line_color(
             Line{
                 from: self.transform(&self.last_measurement),

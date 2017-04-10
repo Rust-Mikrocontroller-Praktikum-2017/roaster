@@ -147,6 +147,7 @@ fn main(hw: board::Hardware) -> ! {
     let mut last_measurement = SYSCLOCK.get_ticks();
 
     let mut target = model::TimeTemp{time: 10.0f32, temp: 30.0f32};
+    let mut last_point = lcd::Point{x:0, y:0};
 
     loop {
 
@@ -179,6 +180,7 @@ fn main(hw: board::Hardware) -> ! {
 
             match plot.event_loop_touch(touch) {
                 Some((dir, delta)) => {
+                    lcd.draw_point_color(last_point, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
                     // TODO move target
                     match dir {
                         DragDirection::Horizontal => target.time += delta,
@@ -188,6 +190,7 @@ fn main(hw: board::Hardware) -> ! {
                     let p = plot.transform(&target);
                     let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
                     lcd.draw_point_color(p, Layer::Layer2, c);
+                    last_point = p;
                 },
                 _ => (),
             }
