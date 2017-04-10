@@ -8,12 +8,19 @@ extern crate r0;
 pub mod plot;
 pub mod model;
 pub mod temp_sensor;
+pub mod time;
+pub mod util;
 
-use stm32f7::{system_clock,board,embedded,sdram,lcd};
+use stm32f7::{system_clock,board,embedded,sdram,lcd,touch,i2c};
 use stm32f7::lcd::*;
 use embedded::interfaces::gpio;
 use embedded::interfaces::gpio::{Gpio};
 use board::spi::Spi;
+use time::*;
+use util::*;
+use plot::DragDirection;
+use embedded::util::delay;
+
 
 use self::temp_sensor::{TemperatureSensor,Max6675};
 
@@ -63,6 +70,7 @@ fn main(hw: board::Hardware) -> ! {
         gpio_j,
         gpio_k,
         spi_2,
+        i2c_3,
         ..
     } = hw;
 
@@ -102,10 +110,22 @@ fn main(hw: board::Hardware) -> ! {
             apb1enr.set_spi2en(true);
         });
 
-        use embedded::util::delay;
         delay(1);
 
     }
+
+    // i2c configuration
+    i2c::init_pins_and_clocks(rcc, &mut gpio);
+    let mut i2c_3 = i2c::init(i2c_3);
+    i2c_3.test_1();
+    i2c_3.test_2();
+
+    // enable floating point unit
+    unsafe {
+        let scb = stm32f7::cortex_m::peripheral::scb_mut();
+        scb.cpacr.modify(|v| v | 0b1111 << 20);
+    }
+    delay(100);
 
     let mut temp_sensor = temp_sensor_init_spi2(&mut gpio, spi_2);
 
@@ -122,20 +142,56 @@ fn main(hw: board::Hardware) -> ! {
 
     plot.draw_axis(&mut lcd);
 
-    let mut last_led_toggle = system_clock::ticks();
-    loop {
-        
-        let ticks = system_clock::ticks();
+    touch::check_family_id(&mut i2c_3).unwrap();
 
-        // every 0.5 seconds
-        if ticks - last_led_toggle >= 500 {
-            last_led_toggle = ticks;
+    let mut last_measurement = SYSCLOCK.get_ticks();
+
+    let mut target = model::TimeTemp{time: 10.0f32, temp: 30.0f32};
+
+    loop {
+
+        let ticks = SYSCLOCK.get_ticks();
+
+        let delta_measurement = time::delta(&ticks, &last_measurement);
+        let delta_measurement = delta_measurement.to_msecs();
+
+        if delta_measurement >= 500 {
+            last_measurement = ticks;
             let val = temp_sensor.read();
             let measurement = model::TimeTemp{
-                time: ticks as f32,
+                time: (delta_measurement as f32) / 1000f32, // TODO just integer divide here?
                 temp: val as f32,
             };
             plot.add_measurement(measurement, &mut lcd);
+        }
+
+        // poll for new touch data
+
+        for touch in &touch::touches(&mut i2c_3).unwrap() {
+
+            let touch = plot::Touch{
+                location: Point{
+                    x: touch.x,
+                    y: touch.y
+                },
+                time: ticks
+            };
+
+            match plot.event_loop_touch(touch) {
+                Some((dir, delta)) => {
+                    // TODO move target
+                    match dir {
+                        DragDirection::Horizontal => target.time += delta,
+                        DragDirection::Vertical   => target.temp -= delta,
+                        _                         => {},
+                    }
+                    let p = plot.transform(&target);
+                    let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
+                    lcd.draw_point_color(p, Layer::Layer2, c);
+                },
+                _ => (),
+            }
+
         }
 
     }
