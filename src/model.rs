@@ -1,6 +1,8 @@
 use core::ops::Sub;
 
+/// Temperature in degrees celsius
 pub type Temperature = f32;
+/// Time in seconds
 pub type Time = f32;
 
 pub struct TimeTemp {
