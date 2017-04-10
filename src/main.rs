@@ -118,7 +118,7 @@ fn main(hw: board::Hardware) -> ! {
 
     lcd.set_background_color(Color::from_hex(0x000000));
 
-    let mut plot = plot::Plot::new(model::Range::new(0f32, (5*60*1000) as f32), model::Range::new(0f32, 4096f32));
+    let mut plot = plot::Plot::new(model::Range::new(0f32, (5*60*1000) as f32), model::Range::new(0f32, 100f32));
 
     plot.draw_axis(&mut lcd);
 

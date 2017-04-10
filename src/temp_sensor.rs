@@ -73,7 +73,9 @@ impl TemperatureSensor for Max6675 {
         // (We are the only reader & only writer)
         assert!(!self.spi.sr.read().rxne());
 
-        return t;
+        let celsius = ((t >> 3) as f32) / 4f32;
+
+        return celsius;
     }
 
 }
