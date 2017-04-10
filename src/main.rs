@@ -7,13 +7,15 @@ extern crate r0;
 
 pub mod plot;
 pub mod model;
+pub mod temp_sensor;
 
 use stm32f7::{system_clock,board,embedded,sdram,lcd};
 use stm32f7::lcd::*;
 use embedded::interfaces::gpio;
 use embedded::interfaces::gpio::{Gpio};
 use board::spi::Spi;
-use board::rcc::Rcc;
+
+use self::temp_sensor::{TemperatureSensor,Max6675};
 
 #[no_mangle]
 pub unsafe extern "C" fn reset() {
@@ -78,22 +80,34 @@ fn main(hw: board::Hardware) -> ! {
 
     system_clock::init(rcc, pwr, flash);
 
-    // enable all gpio ports
-    rcc.ahb1enr.update(|r| {
-        r.set_gpioaen(true);
-        r.set_gpioben(true);
-        r.set_gpiocen(true);
-        r.set_gpioden(true);
-        r.set_gpioeen(true);
-        r.set_gpiofen(true);
-        r.set_gpiogen(true);
-        r.set_gpiohen(true);
-        r.set_gpioien(true);
-        r.set_gpiojen(true);
-        r.set_gpioken(true);
-    });
+    // Peripheral clock configuration
+    {
+        // enable all gpio ports
+        rcc.ahb1enr.update(|r| {
+            r.set_gpioaen(true);
+            r.set_gpioben(true);
+            r.set_gpiocen(true);
+            r.set_gpioden(true);
+            r.set_gpioeen(true);
+            r.set_gpiofen(true);
+            r.set_gpiogen(true);
+            r.set_gpiohen(true);
+            r.set_gpioien(true);
+            r.set_gpiojen(true);
+            r.set_gpioken(true);
+        });
 
-    spi_init(&mut gpio, spi_2, rcc);
+        // Enable SPI_2
+        rcc.apb1enr.update(|apb1enr| {
+            apb1enr.set_spi2en(true);
+        });
+
+        use embedded::util::delay;
+        delay(1);
+
+    }
+
+    let mut temp_sensor = temp_sensor_init_spi2(&mut gpio, spi_2);
 
     // init sdram (needed for display buffer)
     sdram::init(rcc, fmc, &mut gpio);
@@ -116,7 +130,7 @@ fn main(hw: board::Hardware) -> ! {
         // every 0.5 seconds
         if ticks - last_led_toggle >= 500 {
             last_led_toggle = ticks;
-            let val = spi_read(spi_2);
+            let val = temp_sensor.read();
             let measurement = model::TimeTemp{
                 time: ticks,
                 temp: val
@@ -128,90 +142,49 @@ fn main(hw: board::Hardware) -> ! {
 
 }
 
-fn spi_init(gpio: &mut Gpio, spi_2: &mut Spi, rcc: &mut Rcc) -> () {
-    //SPI Init
-    
-    rcc.apb1enr.update(|apb1enr| {
-        apb1enr.set_spi2en(true);
-    });
 
-    use embedded::util::delay;
-    delay(1);
+/// Initialize temperature sensor on SPI_2 port (GPIO pins)
+/// IMPORTANT: "Table 3. Arduino connectors" in the discovery board datasheet
+//             states SPI2_NSS is pin D10. This is wrong.AsMut
+//             SPI2_NSS is D5, as seen in "Figure 25: Arduino Uno connectors"
+fn temp_sensor_init_spi2(gpio: &mut Gpio, spi_2: &'static mut Spi) -> Max6675 {
 
     let sck_pin = (gpio::Port::PortI, gpio::Pin::Pin1);
     let miso_pin = (gpio::Port::PortB, gpio::Pin::Pin14);
     let mosi_pin = (gpio::Port::PortB, gpio::Pin::Pin15);
     let nss_pin = (gpio::Port::PortI, gpio::Pin::Pin0);
 
-    let sck = gpio.to_alternate_function(sck_pin,
-                                         gpio::AlternateFunction::AF5,
-                                         gpio::OutputType::PushPull,
-                                         gpio::OutputSpeed::High,
-                                         gpio::Resistor::NoPull)
+    gpio.to_alternate_function(sck_pin,
+                               gpio::AlternateFunction::AF5,
+                               gpio::OutputType::PushPull,
+                               gpio::OutputSpeed::High,
+                               gpio::Resistor::NoPull)
         .expect("Could not configure sck");
-    let mosi = gpio.to_alternate_function(mosi_pin,
-                                         gpio::AlternateFunction::AF5,
-                                         gpio::OutputType::PushPull,
-                                         gpio::OutputSpeed::High,
-                                         gpio::Resistor::NoPull)
+
+    gpio.to_alternate_function(mosi_pin,
+                               gpio::AlternateFunction::AF5,
+                               gpio::OutputType::PushPull,
+                               gpio::OutputSpeed::High,
+                               gpio::Resistor::NoPull)
         .expect("Could not configure mosi");
-    /*let miso = gpio.to_input(miso_pin,
-                            gpio::Resistor::NoPull)
-        .expect("Could not configure miso");*/
-    let miso = gpio.to_alternate_function(miso_pin,
-                                         gpio::AlternateFunction::AF5,
-                                         gpio::OutputType::PushPull,
-                                         gpio::OutputSpeed::High,
-                                         gpio::Resistor::NoPull);
 
-    let my_nss_pin = (gpio::Port::PortI, gpio::Pin::Pin2);
-    let nss = gpio.to_alternate_function(nss_pin,
-                                        gpio::AlternateFunction::AF5,
-                                        gpio::OutputType::PushPull,
-                                        gpio::OutputSpeed::High,
-                                        gpio::Resistor::NoPull)
-        .expect("Could not configure nss");
-        
-/*let mut nss = gpio.to_output(my_nss_pin,
-                              gpio::OutputType::PushPull,
-                              gpio::OutputSpeed::High,
-                              gpio::Resistor::NoPull)
-        .expect("Could not configure nss");*/
+    // TODO the MISO pin is not necessarily necessary for MAX6675
+    gpio.to_alternate_function(miso_pin,
+                               gpio::AlternateFunction::AF5,
+                               gpio::OutputType::PushPull,
+                               gpio::OutputSpeed::High,
+                               gpio::Resistor::NoPull)
+        .expect("Could not configure MISO pin");
 
-    spi_2.cr1.update(|cr1| {
-        cr1.set_br(0b111);
-        cr1.set_cpol(false); // clock low when inactive
-        cr1.set_cpha(false); // receive on first clock transition
-        cr1.set_rxonly(false);
-        cr1.set_lsbfirst(false);
-        cr1.set_crcen(false);
-        cr1.set_mstr(true); // we are master
-        cr1.set_ssm(false); // software managed ss
-    });
-     
-    spi_2.cr2.update(|cr2| {
-        cr2.set_ds(0b1111); // 16 bit data size
-        cr2.set_ssoe(true); // enable ss
-        cr2.set_frf(false); // frame format motorola
-        cr2.set_nssp(true); // nss pulse mode
-        cr2.set_frxth(false); // RXNE event is set when rx fifo contians 16 bit
-        cr2.set_txdmaen(false); // no dma
-        cr2.set_rxdmaen(false); // no dma
-    });
+    gpio.to_alternate_function(nss_pin,
+                               gpio::AlternateFunction::AF5,
+                               gpio::OutputType::PushPull,
+                               gpio::OutputSpeed::High,
+                               gpio::Resistor::NoPull)
+        .expect("Could not configure NSS ");
 
-    spi_2.cr1.update(|cr1| {
-        cr1.set_spe(true); // SPI enable
-        //cr1.set_ssi(true);
-    });
+    return Max6675::init(spi_2);
+
 }
 
-fn spi_read(spi_2: &mut Spi) -> u16 {
-    spi_2.dr.update(|dr| {
-        dr.set_dr(0);   
-    });
 
-    while !spi_2.sr.read().rxne() {}
-
-    let data:u16 = spi_2.dr.read().dr();
-    return data;
-}
