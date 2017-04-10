@@ -1,24 +1,44 @@
 use model::TimeTemp;
 use stm32f7::lcd;
 use stm32f7::lcd::{Lcd, Color, Layer, Point, Line};
+use model::{Range};
 
 pub struct Plot {
-    pub last_measurement: TimeTemp
-
+    last_measurement: TimeTemp,
+    x_range: Range<f32>,
+    y_range: Range<f32>,
 }
 
+const X_PX_RANGE: Range<u16> = Range{from: 10, to: 460};
+const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 10};
+
 impl Plot {
+    pub fn new(x_range: Range<f32>, y_range: Range<f32>) -> Plot {
+        Plot {
+            last_measurement: TimeTemp{time: 0f32, temp: 0f32},
+            x_range: x_range,
+            y_range: y_range,
+        }
+    }
+
+    fn transform(&self, measurement: &TimeTemp) -> Point {
+        Point {
+            x: ((X_PX_RANGE.from as f32) + ((X_PX_RANGE.signed_size() as f32) / self.x_range.signed_size()) * (measurement.time - self.x_range.from)) as u16,
+            y: ((Y_PX_RANGE.from as f32) + ((Y_PX_RANGE.signed_size() as f32) / self.y_range.signed_size()) * (measurement.temp - self.y_range.from)) as u16,
+        }
+    }
+
     pub fn draw_axis(&self, lcd: &mut Lcd) {
         let axis_color = Color::from_hex(0xffffff).to_argb1555();
         let origin_y = lcd::LCD_SIZE.height - 10;
 
         let x_axis_line = Line {
-            from: Point{x: 10, y: origin_y},
-            to: Point{x: lcd::LCD_SIZE.width - 10, y: origin_y}
+            from: Point{x: X_PX_RANGE.from, y: Y_PX_RANGE.from},
+            to: Point{x: X_PX_RANGE.to, y: Y_PX_RANGE.from}
         };
         let y_axis_line = Line {
-            from: Point{x: 10, y: origin_y},
-            to: Point{x: 10, y: 10}
+            from: Point{x: X_PX_RANGE.from, y: Y_PX_RANGE.from},
+            to: Point{x: X_PX_RANGE.from, y: Y_PX_RANGE.to}
         };
 
         lcd.draw_line_color(x_axis_line, Layer::Layer1, axis_color);
@@ -28,8 +48,8 @@ impl Plot {
         let origin_y = lcd::LCD_SIZE.height - 10;
         lcd.draw_line_color(
             Line{
-                from: Point{x: 10 + (self.last_measurement.time / 500) as u16, y: origin_y - self.last_measurement.temp / 10},
-                to: Point{x: 10 + (measurement.time / 500) as u16, y: origin_y - measurement.temp / 10}
+                from: self.transform(&self.last_measurement),
+                to: self.transform(&measurement),
             }, Layer::Layer1, Color::from_hex(0xff0000).to_argb1555());
         self.last_measurement = measurement;
 

@@ -118,7 +118,7 @@ fn main(hw: board::Hardware) -> ! {
 
     lcd.set_background_color(Color::from_hex(0x000000));
 
-    let mut plot = plot::Plot{last_measurement: model::TimeTemp{time: 0, temp: 0}};
+    let mut plot = plot::Plot::new(model::Range::new(0f32, (5*60*1000) as f32), model::Range::new(0f32, 4096f32));
 
     plot.draw_axis(&mut lcd);
 
@@ -132,8 +132,8 @@ fn main(hw: board::Hardware) -> ! {
             last_led_toggle = ticks;
             let val = temp_sensor.read();
             let measurement = model::TimeTemp{
-                time: ticks,
-                temp: val
+                time: ticks as f32,
+                temp: val as f32,
             };
             plot.add_measurement(measurement, &mut lcd);
         }
