@@ -127,13 +127,6 @@ fn main(hw: board::Hardware) -> ! {
     i2c_3.test_1();
     i2c_3.test_2();
 
-    // enable floating point unit
-    unsafe {
-        let scb = stm32f7::cortex_m::peripheral::scb_mut();
-        scb.cpacr.modify(|v| v | 0b1111 << 20);
-    }
-    delay(100);
-
     let mut temp_sensor = temp_sensor_init_spi2(&mut gpio, spi_2);
 
     // init sdram (needed for display buffer)
