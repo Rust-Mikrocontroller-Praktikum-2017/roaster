@@ -121,6 +121,7 @@ fn main(hw: board::Hardware) -> ! {
 
     }
 
+
     // i2c configuration
     i2c::init_pins_and_clocks(rcc, &mut gpio);
     let mut i2c_3 = i2c::init(i2c_3);
@@ -128,7 +129,6 @@ fn main(hw: board::Hardware) -> ! {
     i2c_3.test_2();
 
     let mut temp_sensor = temp_sensor_init_spi2(&mut gpio, spi_2);
-
     // init sdram (needed for display buffer)
     sdram::init(rcc, fmc, &mut gpio);
 
@@ -150,6 +150,7 @@ fn main(hw: board::Hardware) -> ! {
 
     let mut target = model::TimeTemp{time: 10.0f32, temp: 30.0f32};
     let mut last_point = lcd::Point{x:0, y:0};
+
 
     loop {
 
