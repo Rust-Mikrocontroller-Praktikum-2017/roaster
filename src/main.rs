@@ -132,6 +132,14 @@ fn main(hw: board::Hardware) -> ! {
     // init sdram (needed for display buffer)
     sdram::init(rcc, fmc, &mut gpio);
 
+    let pwm_pin = (gpio::Port::PortG, gpio::Pin::Pin6);
+
+    let mut pwm_gpio = gpio.to_output(pwm_pin,
+                   gpio::OutputType::PushPull,
+                   gpio::OutputSpeed::High,
+                   gpio::Resistor::NoPull)
+        .expect("Could not configure pwm pin");
+
     // lcd controller
     let mut lcd = lcd::init(ltdc, rcc, &mut gpio);
     lcd.clear_screen();
@@ -144,13 +152,14 @@ fn main(hw: board::Hardware) -> ! {
 
     touch::check_family_id(&mut i2c_3).unwrap();
 
-    let mut pid_controller = pid::PIDController::new(1f32, 0.1f32, 0.5f32);
+    let mut pid_controller = pid::PIDController::new(0.05f32, 0.0005f32, 0.0f32);
 
     let mut last_measurement = SYSCLOCK.get_ticks();
 
     let mut target = model::TimeTemp{time: 10.0f32, temp: 30.0f32};
     let mut last_point = lcd::Point{x:0, y:0};
 
+    let mut duty_cycle: usize = 0;
 
     loop {
 
@@ -160,7 +169,7 @@ fn main(hw: board::Hardware) -> ! {
 
         if delta_measurement.to_msecs() >= 500 {
             last_measurement = ticks;
-            let val = 100f32;//temp_sensor.read();
+            let val = temp_sensor.read();
             let measurement = model::TimeTemp{
                 time: ticks.to_secs(), // TODO just integer divide here?
                 temp: val as f32,
@@ -169,8 +178,11 @@ fn main(hw: board::Hardware) -> ! {
 
             let error = target.temp - measurement.temp;
             let pid_value = pid_controller.cycle(error, &delta_measurement);
-            lcd.draw_point_color(plot.transform(&model::TimeTemp{time: ticks.to_secs(), temp: pid_value}), Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
+            duty_cycle = if pid_value < 0f32 { 0 } else if pid_value > 1f32 { 1000 } else {(pid_value * 1000f32) as usize};
+            lcd.draw_point_color(plot.transform(&model::TimeTemp{time: ticks.to_secs(), temp: pid_value * 100f32}), Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
         }
+
+        pwm_gpio.set(ticks.to_msecs() % 1000 < duty_cycle);
 
         // poll for new touch data
 
