@@ -12,6 +12,7 @@ pub mod temp_sensor;
 pub mod time;
 pub mod util;
 pub mod pid;
+pub mod ramp;
 
 use stm32f7::{system_clock,board,embedded,sdram,lcd,touch,i2c};
 use stm32f7::lcd::*;
@@ -152,34 +153,43 @@ fn main(hw: board::Hardware) -> ! {
 
     touch::check_family_id(&mut i2c_3).unwrap();
 
-    let mut pid_controller = pid::PIDController::new(0.05f32, 0.0005f32, 0.0f32);
+    let mut pid_controller = pid::PIDController::new(1f32, 0.01f32, 0.0f32);
 
-    let mut last_measurement = SYSCLOCK.get_ticks();
+    let mut last_measurement_time = SYSCLOCK.get_ticks();
+    let mut last_measurement = model::TimeTemp{time: 0f32, temp: 0f32};
 
     let mut target = model::TimeTemp{time: 10.0f32, temp: 30.0f32};
-    let mut last_point = lcd::Point{x:0, y:0};
+    let mut ramp_start = model::TimeTemp{time: 0f32, temp: 0f32};
+    let mut last_line = lcd::Line{from: Point{x:0, y:0}, to: Point{x:0, y:0}};
 
     let mut duty_cycle: usize = 0;
+
+    let mut temp = 20f32;
 
     loop {
 
         let ticks = SYSCLOCK.get_ticks();
 
-        let delta_measurement = time::delta(&ticks, &last_measurement);
+        let delta_measurement = time::delta(&ticks, &last_measurement_time);
 
         if delta_measurement.to_msecs() >= 500 {
-            last_measurement = ticks;
-            let val = temp_sensor.read();
+            let val = temp;//temp_sensor.read();
             let measurement = model::TimeTemp{
                 time: ticks.to_secs(), // TODO just integer divide here?
                 temp: val as f32,
             };
             plot.add_measurement(measurement, &mut lcd);
 
-            let error = target.temp - measurement.temp;
+            let ramp_target_temp = ramp::evaluate_ramp(ticks.to_secs(), ramp_start, target);
+
+            let error = ramp_target_temp - measurement.temp;
             let pid_value = pid_controller.cycle(error, &delta_measurement);
             duty_cycle = if pid_value < 0f32 { 0 } else if pid_value > 1f32 { 1000 } else {(pid_value * 1000f32) as usize};
             lcd.draw_point_color(plot.transform(&model::TimeTemp{time: ticks.to_secs(), temp: pid_value * 100f32}), Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
+            let pid_clamped = if pid_value < 0f32 { 0f32 } else if pid_value > 1f32 { 1f32 } else {pid_value};
+            temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
+            last_measurement_time = ticks;
+            last_measurement = measurement;
         }
 
         pwm_gpio.set(ticks.to_msecs() % 1000 < duty_cycle);
@@ -198,17 +208,30 @@ fn main(hw: board::Hardware) -> ! {
 
             match plot.event_loop_touch(touch) {
                 Some((dir, delta)) => {
-                    lcd.draw_point_color(last_point, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
+                    //Clear old line
+                    lcd.draw_line_color(last_line, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
+
                     // TODO move target
                     match dir {
                         DragDirection::Horizontal => target.time += delta,
                         DragDirection::Vertical   => target.temp -= delta,
                         _                         => {},
                     }
-                    let p = plot.transform(&target);
+
+                    //Target has to be in the future
+                    if target.time < last_measurement.time + 10f32 {
+                        target.time = last_measurement.time + 10f32;
+                    }
+
+                    ramp_start = last_measurement;
+
+                    //Draw new line
+                    let p_start = plot.transform(&ramp_start);
+                    let p_end = plot.transform(&target);
+                    let line = Line{from: p_start, to: p_end};
                     let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
-                    lcd.draw_point_color(p, Layer::Layer2, c);
-                    last_point = p;
+                    lcd.draw_line_color(line, Layer::Layer2, c);
+                    last_line = line;
                 },
                 _ => (),
             }
