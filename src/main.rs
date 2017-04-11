@@ -150,22 +150,27 @@ fn main(hw: board::Hardware) -> ! {
 
     // lcd controller
     let mut lcd = lcd::init(ltdc, rcc, &mut gpio);
+    touch::check_family_id(&mut i2c_3).unwrap();
+
+    loop {
     lcd.clear_screen();
 
     lcd.set_background_color(Color::from_hex(0x000000));
 
     let font = Box::new(Font::new(TTF, 11).unwrap()).leak();
 
-    let mut plot = plot::Plot::new(model::Range::new(0f32, (5*60) as f32),
-                                   model::Range::new(0f32, 100f32),
+    let mut plot = plot::Plot::new(model::Range::new(0f32, (20*60) as f32),
+                                   model::Range::new(0f32, 200f32),
                                    font);
 
     plot.draw_axis(&mut lcd);
 
 
-    touch::check_family_id(&mut i2c_3).unwrap();
+    //let mut pid_controller = pid::PIDController::new(0.3f32, 0.0f32, 0.0f32);
+    //let mut pid_controller = pid::PIDController::new(0.1f32, 0.0f32, 0.3f32); // Definitely better than first
+    let mut pid_controller = pid::PIDController::new(0.2f32, 0.0f32, 0.3f32);
 
-    let mut pid_controller = pid::PIDController::new(1f32, 0.01f32, 0.0f32);
+    let mut smoother = pid::Smoother::new(10);
 
     let mut last_measurement_time = SYSCLOCK.get_ticks();
     let mut last_measurement = model::TimeTemp{time: 0f32, temp: 0f32};
@@ -178,23 +183,28 @@ fn main(hw: board::Hardware) -> ! {
 
     let mut temp = 20f32;
 
-    loop {
+    let state_button = Rect{origin: Point{x: 440, y: 0}, width: 40, height: 40};
+
+    'mainloop: loop {
 
         let ticks = SYSCLOCK.get_ticks();
 
         let delta_measurement = time::delta(&ticks, &last_measurement_time);
 
         if delta_measurement.to_msecs() >= 500 {
-            let val = temp;//temp_sensor.read();
+            let val = temp_sensor.read();
             let measurement = model::TimeTemp{
                 time: ticks.to_secs(), // TODO just integer divide here?
                 temp: val as f32,
             };
             plot.add_measurement(measurement, &mut lcd);
+            
+            smoother.push_value(val);
+            let smooth_temp = smoother.get_average();
 
             let ramp_target_temp = ramp::evaluate_ramp(ticks.to_secs(), ramp_start, target);
 
-            let error = ramp_target_temp - measurement.temp;
+            let error = ramp_target_temp - smooth_temp;
             let pid_value = pid_controller.cycle(error, &delta_measurement);
             duty_cycle = if pid_value < 0f32 { 0 } else if pid_value > 1f32 { 1000 } else {(pid_value * 1000f32) as usize};
             lcd.draw_point_color(plot.transform(&model::TimeTemp{time: ticks.to_secs(), temp: pid_value * 100f32}), Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
@@ -248,7 +258,13 @@ fn main(hw: board::Hardware) -> ! {
                 _ => (),
             }
 
+            if state_button.contains_point(&touch.location) {
+                //Switch state
+                break 'mainloop;
+            }
+
         }
+    }
 
     }
 
