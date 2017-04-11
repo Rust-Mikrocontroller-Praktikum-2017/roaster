@@ -1,8 +1,10 @@
 use model::TimeTemp;
-use stm32f7::lcd::{Lcd, Color, Layer, Point, Line, Rect};
+use stm32f7::lcd::{Lcd, Color, Layer, Point, Line, Rect,TextBox,Font,Alignment};
 use model::{Range, Time, Temperature};
 use time::{TickTime,delta};
 use util;
+
+use collections::*;
 
 pub struct Plot {
     last_measurement: TimeTemp,
@@ -10,6 +12,7 @@ pub struct Plot {
     drag_scale_delta: (f32, f32),
     x_range: Range<f32>,
     y_range: Range<f32>,
+    axis_font: &'static Font<'static>,
 }
 
 #[derive(Clone,Copy)]
@@ -31,7 +34,7 @@ struct Drag {
     direction: DragDirection,
 }
 
-const X_PX_RANGE: Range<u16> = Range{from: 20, to: 460};
+const X_PX_RANGE: Range<u16> = Range{from: 24, to: 460};
 const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 20};
 
 const X_PX_DRAG_RANGE: Rect = Rect{ // TODO
@@ -49,13 +52,14 @@ const X_TICK_DIST: f32 = 30f32;
 const Y_TICK_DIST: f32 = 25f32;
 
 impl Plot {
-    pub fn new(x_range: Range<f32>, y_range: Range<f32>) -> Plot {
+    pub fn new(x_range: Range<f32>, y_range: Range<f32>, axis_font: &'static Font<'static>) -> Plot {
         Plot {
             last_measurement: TimeTemp{time: 0f32, temp: 0f32},
             x_range: x_range,
             y_range: y_range,
             current_drag: None,
             drag_scale_delta: (0.1f32,0.1f32),
+            axis_font: axis_font,
         }
         // TODO assert drag_horizontal_zone and drag_vertical_zone are not overlapping
     }
@@ -76,8 +80,8 @@ impl Plot {
     }
 
     pub fn draw_axis(&self, lcd: &mut Lcd) {
-        let axis_color = Color::from_hex(0xffffff).to_argb1555();
-        let drag_color = Color::from_hex(0x222222).to_argb1555();
+        let axis_color = Color::from_hex(0xffffff);
+        let drag_color = Color::from_hex(0x222222);
 
         let x_axis_line = Line {
             from: Point{x: X_PX_RANGE.from, y: Y_PX_RANGE.from},
@@ -88,29 +92,74 @@ impl Plot {
             to: Point{x: X_PX_RANGE.from, y: Y_PX_RANGE.to}
         };
 
-        lcd.fill_rect_color(Y_PX_DRAG_RANGE, Layer::Layer1, drag_color);
-        lcd.fill_rect_color(X_PX_DRAG_RANGE, Layer::Layer1, drag_color);
+        lcd.fill_rect_color(Y_PX_DRAG_RANGE, Layer::Layer1, drag_color.to_argb1555());
+        lcd.fill_rect_color(X_PX_DRAG_RANGE, Layer::Layer1, drag_color.to_argb1555());
 
-        lcd.draw_line_color(x_axis_line, Layer::Layer1, axis_color);
-        lcd.draw_line_color(y_axis_line, Layer::Layer1, axis_color);
+        lcd.draw_line_color(x_axis_line, Layer::Layer1, axis_color.to_argb1555());
+        lcd.draw_line_color(y_axis_line, Layer::Layer1, axis_color.to_argb1555());
+
+        let mut tb = TextBox{
+            canvas: Rect{origin:Point{x:0, y:0}, width: 18, height: 14},
+            font: self.axis_font,
+            alignment: Alignment::Center,
+            bg_color: drag_color,//Color::from_hex(0xff0000),
+            fg_color: axis_color,
+        };
+
 
         let mut x_tick = self.x_range.from;
         while x_tick <= self.x_range.to {
+
             let x_tick_px = self.transform_time(x_tick);
+
+            let t_pad = 1;
+            let tick_line_radius = 2;
+
+            // V: [Y_PX_RANGE.from]-[tick_line_radius]-[t_pad]
+            {
+                tb.canvas.origin = Point{x: x_tick_px - tb.canvas.width/2,
+                                         y: Y_PX_RANGE.from + tick_line_radius + t_pad};
+                tb.redraw(format!("{}", x_tick).as_str(), |p,c| {
+                    lcd.draw_point_color(p, Layer::Layer1, c.to_argb1555())
+                });
+            }
+
             lcd.draw_line_color(Line {
                 from: Point{x: x_tick_px, y: Y_PX_RANGE.from - 2},
                 to: Point{x: x_tick_px, y: Y_PX_RANGE.from + 2}
-            }, Layer::Layer1, axis_color);
+            }, Layer::Layer1, axis_color.to_argb1555());
+
+
             x_tick += X_TICK_DIST;
         }
 
         let mut y_tick = self.y_range.from;
         while y_tick <= self.y_range.to {
+
             let y_tick_px = self.transform_temp(y_tick);
-            lcd.draw_line_color(Line {
-                from: Point{x: X_PX_RANGE.from - 2, y: y_tick_px},
-                to: Point{x: X_PX_RANGE.from + 2, y: y_tick_px}
-            }, Layer::Layer1, axis_color);
+
+            let t_pad = 2;
+            let tick_line_radius = 2;
+
+            // |-[t_pad]-[tb.canvas.width]-[t_pad]-(tick_line)
+            {
+                tb.alignment = Alignment::Right;
+                tb.canvas.width = X_PX_RANGE.from - 2*t_pad - tick_line_radius;
+                tb.canvas.origin = Point{x: X_PX_RANGE.from
+                                            - tick_line_radius
+                                            - t_pad
+                                            - tb.canvas.width,
+                                         y: y_tick_px - tb.canvas.height/2};
+                tb.redraw(format!("{}", y_tick).as_str(), |p,c| {
+                    lcd.draw_point_color(p, Layer::Layer1, c.to_argb1555())
+                });
+            }
+
+             lcd.draw_line_color(Line {
+                from: Point{x: X_PX_RANGE.from - tick_line_radius, y: y_tick_px},
+                to: Point{x: X_PX_RANGE.from + tick_line_radius, y: y_tick_px}
+            }, Layer::Layer1, axis_color.to_argb1555());
+
             y_tick += Y_TICK_DIST;
         }
     }

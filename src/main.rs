@@ -1,8 +1,10 @@
 #![no_std]
 #![no_main]
 #![feature(asm)]
+#![feature(collections)]
 
 extern crate stm32f7_discovery as stm32f7;
+extern crate collections;
 
 extern crate r0;
 
@@ -13,6 +15,7 @@ pub mod time;
 pub mod util;
 pub mod pid;
 pub mod ramp;
+mod leak;
 
 use stm32f7::{system_clock,board,embedded,sdram,lcd,touch,i2c};
 use stm32f7::lcd::*;
@@ -24,8 +27,12 @@ use util::*;
 use plot::DragDirection;
 use embedded::util::delay;
 
+use collections::boxed::Box;
+use leak::Leak;
 
 use self::temp_sensor::{TemperatureSensor,Max6675};
+
+static TTF: &[u8] = include_bytes!("RobotoMono-Bold.ttf");
 
 #[no_mangle]
 pub unsafe extern "C" fn reset() {
@@ -147,9 +154,14 @@ fn main(hw: board::Hardware) -> ! {
 
     lcd.set_background_color(Color::from_hex(0x000000));
 
-    let mut plot = plot::Plot::new(model::Range::new(0f32, (5*60) as f32), model::Range::new(0f32, 100f32));
+    let font = Box::new(Font::new(TTF, 11).unwrap()).leak();
+
+    let mut plot = plot::Plot::new(model::Range::new(0f32, (5*60) as f32),
+                                   model::Range::new(0f32, 100f32),
+                                   font);
 
     plot.draw_axis(&mut lcd);
+
 
     touch::check_family_id(&mut i2c_3).unwrap();
 

@@ -6,3 +6,7 @@ git clone --branch roaster git@github.com:Rust-Mikrocontroller-Praktikum-2017/ro
 rustup override set nightly
 xargo build
 ```
+
+# Licenses
+
+- [Roboto Mono Bold Font](https://github.com/google/fonts/blob/master/apache/robotomono/LICENSE.txt)
