@@ -146,7 +146,7 @@ fn main(hw: board::Hardware) -> ! {
     // init sdram (needed for display buffer)
     sdram::init(rcc, fmc, &mut gpio);
 
-    let pwm_pin = (gpio::Port::PortG, gpio::Pin::Pin6);
+    let pwm_pin = (gpio::Port::PortI, gpio::Pin::Pin2);
 
     let mut pwm_gpio = gpio.to_output(pwm_pin,
                    gpio::OutputType::PushPull,
