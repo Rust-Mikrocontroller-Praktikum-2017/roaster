@@ -212,7 +212,7 @@ fn main(hw: board::Hardware) -> ! {
         let delta_measurement = time::delta_checked(&last_measurement_system_time, &ticks);
 
         if delta_measurement.to_msecs() >= 500 {
-            let val = temp;//temp_sensor.read();
+            let val = temp_sensor.read();
             let measurement_time = time::delta_checked(&measurement_start_system_time, &ticks).to_secs();
             let measurement = model::TimeTemp{
                 time: measurement_time, // TODO just integer divide here?
@@ -243,8 +243,8 @@ fn main(hw: board::Hardware) -> ! {
                         y: plot::Plot::transform_ranges(model::Range{from: 0f32, to: 1f32}, plot::Y_PX_RANGE, pid_value)
                     }, Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
 
-                let pid_clamped = util::clamp(pid_value, 0f32, 1f32);
-                temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
+                //let pid_clamped = util::clamp(pid_value, 0f32, 1f32);
+                //temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
             } else {
                 duty_cycle = 0;
             }
