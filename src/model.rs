@@ -1,4 +1,6 @@
 use core::ops::Sub;
+use lcd;
+use time;
 
 /// Temperature in degrees celsius
 pub type Temperature = f32;
@@ -11,6 +13,7 @@ pub struct TimeTemp {
     pub temp: Temperature,
 }
 
+#[derive(Clone, Copy)]
 pub struct Range<T> {
     pub from: T,
     pub to: T
@@ -39,4 +42,10 @@ impl<T: PartialOrd + Sub + Copy + Into<f32>> Range<T> {
         let from_f: f32 = self.from.into();
         to_f - from_f
     }
+}
+
+#[derive(Clone,Copy)]
+pub struct Touch {
+    pub location: lcd::Point,
+    pub time: time::TickTime,
 }

@@ -15,6 +15,7 @@ pub mod time;
 pub mod util;
 pub mod pid;
 pub mod ramp;
+pub mod state_button;
 mod leak;
 
 use stm32f7::{system_clock,board,embedded,sdram,lcd,touch,i2c};
@@ -33,6 +34,7 @@ use collections::boxed::Box;
 use leak::Leak;
 
 use self::temp_sensor::{TemperatureSensor,Max6675};
+use state_button::State;
 
 static TTF: &[u8] = include_bytes!("RobotoMono-Bold.ttf");
 
@@ -153,101 +155,97 @@ fn main(hw: board::Hardware) -> ! {
 
     let axis_color = Color::from_hex(0xffffff);
     let drag_color = Color::from_hex(0x222222);
-    let clear_color = Color::rgba(0,0,0,0);
 
     // lcd controller
     let mut lcd = lcd::init(ltdc, rcc, &mut gpio);
+    touch::check_family_id(&mut i2c_3).unwrap();
+
+    loop {
+    SYSCLOCK.reset();
     lcd.clear_screen();
 
     lcd.set_background_color(Color::from_hex(0x000000));
 
     let plot_font = Box::new(Font::new(TTF, 11).unwrap()).leak();
+    let rtval_font = Box::new(Font::new(TTF, 14).unwrap()).leak();
 
-    let mut plot = plot::Plot::new(model::Range::new(0f32, (5*60) as f32),
-                                   model::Range::new(0f32, 100f32),
+    let mut plot = plot::Plot::new(model::Range::new(0f32, (20*60) as f32),
+                                   model::Range::new(0f32, 200f32),
                                    plot_font,
+                                   rtval_font,
                                    axis_color,
                                    drag_color,
                                    70, // drag timeout
                     );
 
-    let rtval_font = Box::new(Font::new(TTF, 14).unwrap()).leak();
-    let curval_textbox = TextBox{
-        alignment: Alignment::Right,
-        canvas: Rect{ origin: Point{x: 480 - 170 - 6, y: 194},
-                      width: 170, height: rtval_font.size + 6},
-        font: rtval_font,
-        bg_color: clear_color,
-        fg_color: axis_color,
-    };
-    let target_textbox = TextBox{
-        alignment: Alignment::Right,
-        canvas: Rect{origin: curval_textbox.canvas.anchor_point(Anchor::LowerLeft)
-                            + Point{x: 0, y: 2}, // padding,
-                     width: curval_textbox.canvas.width, height: rtval_font.size + 6},
-        font: rtval_font,
-        bg_color: clear_color,
-        fg_color: axis_color,
-    };
-
     plot.draw_axis(&mut lcd);
+    plot.draw_ramp(&mut lcd);
 
-    touch::check_family_id(&mut i2c_3).unwrap();
+    //let mut pid_controller = pid::PIDController::new(0.3f32, 0.0f32, 0.0f32);
+    //let mut pid_controller = pid::PIDController::new(0.1f32, 0.0f32, 0.3f32); // Definitely better than first
+    let mut pid_controller = pid::PIDController::new(0.2f32, 0.0f32, 0.3f32);
 
-    let mut pid_controller = pid::PIDController::new(1f32, 0.01f32, 0.0f32);
+    let mut smoother = pid::Smoother::new(10);
 
-    let mut last_measurement_time = SYSCLOCK.get_ticks();
-    let mut last_measurement = model::TimeTemp{time: 0f32, temp: 0f32};
-
-    let mut target = model::TimeTemp{time: 10.0f32, temp: 30.0f32};
-    let mut ramp_start = model::TimeTemp{time: 0f32, temp: 0f32};
-    let mut last_line = lcd::Line{from: Point{x:0, y:0}, to: Point{x:0, y:0}};
+    let mut measurement_start_system_time = SYSCLOCK.get_ticks();
+    let mut last_measurement_system_time = SYSCLOCK.get_ticks();
 
     let mut duty_cycle: usize = 0;
 
     let mut temp = 20f32;
 
-    let mut last_curval_textbox_update = SYSCLOCK.get_ticks();
-    let mut last_target_textbox_update = SYSCLOCK.get_ticks();
+    let mut state_button = state_button::StateButton::new(
+        Color::from_hex(0x222222),
+        Rect{origin: Point{x: 440, y: 0}, width: 40, height: 40}
+    );
+    state_button.render(&mut lcd);
 
-
-    loop {
+    'mainloop: loop {
 
         let ticks = SYSCLOCK.get_ticks();
 
-        let delta_measurement = time::delta(&ticks, &last_measurement_time);
+        let delta_measurement = time::delta_checked(&last_measurement_system_time, &ticks);
 
-        if delta_measurement.to_msecs() >= 500 {
-            let val = temp;//temp_sensor.read();
-            let measurement = model::TimeTemp{
-                time: ticks.to_secs(), // TODO just integer divide here?
-                temp: val as f32,
-            };
-            plot.add_measurement(measurement, &mut lcd);
+        if let State::RUNNING = state_button.state() {
+            if delta_measurement.to_msecs() >= 500 {
+                let val = 100f32;//temp_sensor.read();
+                let measurement_time = time::delta_checked(&measurement_start_system_time, &ticks).to_secs();
+                let measurement = model::TimeTemp{
+                    time: measurement_time, // TODO just integer divide here?
+                    temp: val as f32,
+                };
+                plot.add_measurement(measurement, &mut lcd);
 
+                smoother.push_value(val);
+                let smooth_temp = smoother.get_average();
 
-            let ramp_target_temp = ramp::evaluate_ramp(ticks.to_secs(), ramp_start, target);
+                let ramp_target_temp = plot.ramp().evaluate(measurement_time);
 
-            let error = ramp_target_temp - measurement.temp;
-            let pid_value = pid_controller.cycle(error, &delta_measurement);
-            duty_cycle = if pid_value < 0f32 { 0 } else if pid_value > 1f32 { 1000 } else {(pid_value * 1000f32) as usize};
-            lcd.draw_point_color(plot.transform(&model::TimeTemp{time: ticks.to_secs(), temp: pid_value * 100f32}), Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
-            let pid_clamped = if pid_value < 0f32 { 0f32 } else if pid_value > 1f32 { 1f32 } else {pid_value};
-            temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
-            last_measurement_time = ticks;
-            last_measurement = measurement;
+                let error = ramp_target_temp - smooth_temp;
+                let pid_value = pid_controller.cycle(error, &delta_measurement);
+                duty_cycle = (util::clamp(pid_value, 0f32, 1f32) * 1000f32) as usize;
+
+                lcd.draw_point_color(
+                    Point{
+                        x: plot.transform_time(measurement_time),
+                        y: plot::Plot::transform_ranges(model::Range{from: 0f32, to: 1f32}, plot::Y_PX_RANGE, pid_value)
+                    }, Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
+
+                //let pid_clamped = util::clamp(pid_value, 0f32, 1f32);
+                //temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
+                last_measurement_system_time = ticks;
+            }
+        } else {
+            duty_cycle = 0;
         }
 
         pwm_gpio.set(ticks.to_msecs() % 1000 < duty_cycle);
 
         // poll for new touch data
 
-        let mut processed_touches = false;
         for touch in &touch::touches(&mut i2c_3).unwrap() {
 
-            processed_touches = true;
-
-            let touch = plot::Touch{
+            let touch = model::Touch{
                 location: Point{
                     x: touch.x,
                     y: touch.y
@@ -255,61 +253,30 @@ fn main(hw: board::Hardware) -> ! {
                 time: ticks
             };
 
-            match plot.event_loop_touch(touch) {
-                Some((dir, delta)) => {
-                    //Clear old line
-                    lcd.draw_line_color(last_line, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
+            match state_button.state() {
+                State::RUNNING | State::RESETTED =>
+                    plot.handle_touch(touch, &mut lcd),
+                _ => {},
+            }
 
-                    // TODO move target
-                    match dir {
-                        DragDirection::Horizontal => target.time += delta,
-                        DragDirection::Vertical   => target.temp -= delta,
-                        _                         => {},
-                    }
-
-                    //Target has to be in the future
-                    if target.time < last_measurement.time + 10f32 {
-                        target.time = last_measurement.time + 10f32;
-                    }
-
-                    ramp_start = last_measurement;
-
-                    //Draw new line
-                    let p_start = plot.transform(&ramp_start);
-                    let p_end = plot.transform(&target);
-                    let line = Line{from: p_start, to: p_end};
-                    let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
-                    lcd.draw_line_color(line, Layer::Layer2, c);
-                    last_line = line;
-                },
-                _ => (),
+            if let Some(new_state) = state_button.handle_touch(touch) {
+                match new_state {
+                    State::RESETTED => {
+                        break 'mainloop;
+                    },
+                    State::RUNNING => {
+                        measurement_start_system_time = SYSCLOCK.get_ticks();
+                        last_measurement_system_time = measurement_start_system_time;
+                    },
+                    _ => {},
+                }
+                state_button.render(&mut lcd);
             }
 
 
         }
 
-        const CURVAL_LABEL: &'static str = "Cur";
-        const TARGET_LABEL: &'static str = "Tar";
-        const LABEL_LEN: usize = 3;
-
-        let touch_drew_over_curval_textbox_needs_redraw =
-            processed_touches &&
-            time::delta(&last_curval_textbox_update, &ticks).to_msecs() > 1000/10;
-
-        if time::delta(&last_curval_textbox_update, &ticks).to_msecs() > 1000 {
-            last_curval_textbox_update = ticks;
-            curval_textbox.redraw(rtval_format(CURVAL_LABEL, LABEL_LEN, last_measurement).as_str(), |p,c| {
-                lcd.draw_point_color(p, Layer::Layer2, c.to_argb1555());
-            });
-        }
-
-        if processed_touches &&
-           time::delta(&last_target_textbox_update, &ticks).to_msecs() > 1000/10  {
-            last_target_textbox_update = ticks;
-            target_textbox.redraw(rtval_format(TARGET_LABEL, LABEL_LEN, target).as_str(), |p,c| {
-                lcd.draw_point_color(p, Layer::Layer2, c.to_argb1555());
-            });
-        }
+    }
 
     }
 
@@ -334,6 +301,7 @@ fn temp_sensor_init_spi2(gpio: &mut Gpio, spi_2: &'static mut Spi) -> Max6675 {
                                gpio::Resistor::NoPull)
         .expect("Could not configure sck");
 
+    // TODO the MOSI pin is not necessarily necessary for MAX6675
     gpio.to_alternate_function(mosi_pin,
                                gpio::AlternateFunction::AF5,
                                gpio::OutputType::PushPull,
@@ -341,7 +309,6 @@ fn temp_sensor_init_spi2(gpio: &mut Gpio, spi_2: &'static mut Spi) -> Max6675 {
                                gpio::Resistor::NoPull)
         .expect("Could not configure mosi");
 
-    // TODO the MISO pin is not necessarily necessary for MAX6675
     gpio.to_alternate_function(miso_pin,
                                gpio::AlternateFunction::AF5,
                                gpio::OutputType::PushPull,
@@ -358,11 +325,4 @@ fn temp_sensor_init_spi2(gpio: &mut Gpio, spi_2: &'static mut Spi) -> Max6675 {
 
     return Max6675::init(spi_2);
 
-}
-
-#[inline]
-fn rtval_format(label: &str, label_len: usize, measurement: model::TimeTemp) -> String {
-    let mins = measurement.time as usize / 60;
-    let secs = measurement.time as usize % 60;
-    format!("{:.*} {:>5.1}°C @ {:02}:{:02}", label_len, label, measurement.temp, mins, secs)
 }

@@ -1,0 +1,9 @@
+set logging on
+set pagination off
+b main.rs:185
+commands $bpnum
+print measurement.time
+print measurement.temp
+c
+end
+

@@ -1,4 +1,5 @@
 use time;
+use collections::VecDeque;
 
 pub struct PIDController {
     k_p: f32,
@@ -34,5 +35,34 @@ impl PIDController {
     pub fn reset(&mut self) {
         self.last_error = None;
         self.integral = 0f32;
+    }
+}
+
+pub struct Smoother {
+    values: VecDeque<f32>,
+    num_values: usize
+}
+
+impl Smoother {
+    pub fn new(num_values: usize) -> Smoother {
+        Smoother{
+            values: VecDeque::with_capacity(num_values),
+            num_values: num_values,
+        }
+    }
+
+    pub fn push_value(&mut self, value: f32) {
+        if self.values.len() >= self.num_values {
+            self.values.pop_front();
+        }
+        self.values.push_back(value);
+    }
+
+    pub fn get_average(&self) -> f32 {
+        let mut sum = 0f32;
+        for value in &self.values {
+            sum += *value;
+        }
+        sum / (self.values.len() as f32)
     }
 }

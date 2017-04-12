@@ -1,7 +1,9 @@
 use model::TimeTemp;
-use stm32f7::lcd::{Lcd, Color, Layer, Point, Line, Rect,TextBox,Font,Alignment};
-use model::{Range, Time, Temperature};
-use time::{TickTime,delta};
+use stm32f7::lcd::*;
+//{Lcd, Color, Layer, Point, Line, Rect,TextBox,Font,Alignment,CLEAR_COLOR};
+use model::{Range, Time, Temperature, Touch};
+use time::{TickTime,delta,SYSCLOCK,ClockSource};
+use ramp::Ramp;
 use util;
 
 use collections::*;
@@ -16,12 +18,12 @@ pub struct Plot {
     axis_color: Color,
     drag_zone_color: Color,
     drag_timeout: usize,
-}
-
-#[derive(Clone,Copy)]
-pub struct Touch {
-    pub location: Point,
-    pub time: TickTime,
+    ramp: Ramp,
+    last_ramp_line: Line,
+    curval_textbox: TextBox<'static>,
+    last_curval_textbox_update: Option<TickTime>,
+    target_textbox: TextBox<'static>,
+    last_target_textbox_update: Option<TickTime>,
 }
 
 #[derive(Clone,Copy,PartialEq)]
@@ -37,8 +39,8 @@ struct Drag {
     direction: DragDirection,
 }
 
-const X_PX_RANGE: Range<u16> = Range{from: 24, to: 460};
-const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 20};
+pub const X_PX_RANGE: Range<u16> = Range{from: 24, to: 460};
+pub const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 20};
 
 const X_PX_DRAG_RANGE: Rect = Rect{ // TODO
     origin: Point{ x: 0, y: 232},
@@ -51,11 +53,40 @@ const Y_PX_DRAG_RANGE: Rect = Rect{ // TODO
     height: 272,
 };
 
-const X_TICK_DIST: f32 = 30f32;
+const X_TICK_DIST: f32 = 60f32;
 const Y_TICK_DIST: f32 = 25f32;
 
+const CURVAL_LABEL: &'static str = "Cur";
+const TARGET_LABEL: &'static str = "Tar";
+const LABEL_LEN: usize = 3;
+
+
 impl Plot {
-    pub fn new(x_range: Range<f32>, y_range: Range<f32>, axis_font: &'static Font<'static>, axis_color: Color, drag_zone_color: Color, drag_timeout: usize) -> Plot {
+    pub fn new(x_range: Range<f32>, y_range: Range<f32>, axis_font: &'static Font<'static>, target_label_font: &'static Font<'static>, axis_color: Color, drag_zone_color: Color, drag_timeout: usize) -> Plot {
+
+        // TODO fix hardocing
+        let curval_textbox = TextBox{
+            alignment: Alignment::Right,
+            canvas: Rect{ origin: Point{x: 480 - 170 - 6, y: 194},
+                        width: 170,
+                        height: target_label_font.size + 6 // TODO compute offset
+                        },
+            font: target_label_font,
+            bg_color: CLEAR_COLOR,
+            fg_color: axis_color,
+        };
+        let target_textbox = TextBox{
+            alignment: Alignment::Right,
+            canvas: Rect{origin: curval_textbox.canvas.anchor_point(Anchor::LowerLeft)
+                                + Point{x: 0, y: 2}, // padding,
+                        width: curval_textbox.canvas.width,
+                        height: target_label_font.size + 6 // TODO compute offset
+                        },
+            font: target_label_font,
+            bg_color: CLEAR_COLOR,
+            fg_color: axis_color,
+        };
+
         Plot {
             last_measurement: TimeTemp{time: 0f32, temp: 0f32},
             x_range: x_range,
@@ -66,16 +97,32 @@ impl Plot {
             axis_color: axis_color,
             drag_zone_color: drag_zone_color,
             drag_timeout: drag_timeout,
+            target_textbox: target_textbox,
+            last_target_textbox_update: None,
+            curval_textbox: curval_textbox,
+            last_curval_textbox_update: None,
+            ramp: Ramp {
+                start: TimeTemp{time: 0f32, temp: 0f32},
+                end: TimeTemp{time: 60f32, temp: 100f32},
+            },
+            last_ramp_line: Line {
+                from: Point{x: 0, y: 0},
+                to: Point{x: 0, y: 0},
+            }
         }
         // TODO assert drag_horizontal_zone and drag_vertical_zone are not overlapping
     }
 
-    fn transform_time(&self, time: Time) -> u16 {
-        ((X_PX_RANGE.from as f32) + ((X_PX_RANGE.signed_size() as f32) / self.x_range.signed_size()) * (time - self.x_range.from)) as u16
+    pub fn transform_ranges(from_range: Range<f32>, to_range: Range<u16>, value: f32) -> u16 {
+        ((to_range.from as f32) + ((to_range.signed_size() as f32) / from_range.signed_size()) * (value - from_range.from)) as u16
     }
 
-    fn transform_temp(&self, temp: Temperature) -> u16 {
-        ((Y_PX_RANGE.from as f32) + ((Y_PX_RANGE.signed_size() as f32) / self.y_range.signed_size()) * (temp - self.y_range.from)) as u16
+    pub fn transform_time(&self, time: Time) -> u16 {
+        Plot::transform_ranges(self.x_range, X_PX_RANGE, time)
+    }
+
+    pub fn transform_temp(&self, temp: Temperature) -> u16 {
+        Plot::transform_ranges(self.y_range, Y_PX_RANGE, temp)
     }
 
     pub fn transform(&self, measurement: &TimeTemp) -> Point {
@@ -169,6 +216,15 @@ impl Plot {
     }
 
     pub fn add_measurement(&mut self, measurement: TimeTemp, lcd: &mut Lcd) {
+
+        let ticks = SYSCLOCK.get_ticks();
+        if self.last_curval_textbox_update.map_or(true, |x| delta(&x, &ticks).to_msecs() > 1000) {
+            self.last_curval_textbox_update = Some(ticks);
+            self.curval_textbox.redraw(rtval_format(CURVAL_LABEL, LABEL_LEN, measurement).as_str(), |p,c| {
+                lcd.draw_point_color(p, Layer::Layer2, c.to_argb1555());
+            });
+        }
+
         lcd.draw_line_color(
             Line{
                 from: self.transform(&self.last_measurement),
@@ -178,7 +234,52 @@ impl Plot {
 
     }
 
-    pub fn event_loop_touch(&mut self, touch: Touch) -> Option<(DragDirection,f32)> {
+    pub fn draw_ramp(&mut self, lcd: &mut Lcd) {
+        //Clear old line
+        lcd.draw_line_color(self.last_ramp_line, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
+
+        //Draw new line
+        let p_start = self.transform(&self.ramp.start);
+        let p_end = self.transform(&self.ramp.end);
+        let line = Line{from: p_start, to: p_end};
+        let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
+        lcd.draw_line_color(line, Layer::Layer2, c);
+        self.last_ramp_line = line;
+    }
+
+    pub fn handle_touch(&mut self, touch: Touch, lcd: &mut Lcd) {
+
+        let drag = self.get_drag_gesture(touch);
+        if let None = drag {
+            return;
+        }
+        let (dir, drag_delta) = drag.unwrap();
+
+        match dir {
+            DragDirection::Horizontal => self.ramp.end.time = util::clamp_range(self.ramp.end.time + drag_delta, self.x_range),
+            DragDirection::Vertical   => self.ramp.end.temp = util::clamp_range(self.ramp.end.temp - drag_delta, self.y_range),
+            _                         => {},
+        }
+
+        //Target has to be in the future
+        if self.ramp.end.time < self.last_measurement.time + 10f32 {
+            self.ramp.end.time = self.last_measurement.time + 10f32;
+        }
+
+        self.ramp.start = self.last_measurement;
+
+        let ticks = SYSCLOCK.get_ticks();
+        if self.last_target_textbox_update.map_or(true, |x| delta(&x, &ticks).to_msecs() > 1000) {
+            self.last_target_textbox_update = Some(ticks);
+            self.target_textbox.redraw(rtval_format(TARGET_LABEL, LABEL_LEN, self.ramp.end).as_str(), |p,c| {
+                lcd.draw_point_color(p, Layer::Layer2, c.to_argb1555());
+            });
+        }
+
+        self.draw_ramp(lcd);
+    }
+
+    fn get_drag_gesture(&mut self, touch: Touch) -> Option<(DragDirection,f32)> {
 
         let drag_zone = {
             if X_PX_DRAG_RANGE.contains_point(&touch.location) {
@@ -232,8 +333,20 @@ impl Plot {
 
     }
 
+    pub fn ramp(&self) -> &Ramp {
+        &self.ramp
+    }
+
 }
 
 fn signed_delta(from: u16, to: u16) -> f32 {
     return ((to as i32) - (from as i32)) as f32;
+}
+
+
+#[inline]
+fn rtval_format(label: &str, label_len: usize, measurement: TimeTemp) -> String {
+    let mins = measurement.time as usize / 60;
+    let secs = measurement.time as usize % 60;
+    format!("{:.*} {:>5.1}°C @ {:02}:{:02}", label_len, label, measurement.temp, mins, secs)
 }

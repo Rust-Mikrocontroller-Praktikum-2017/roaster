@@ -20,6 +20,9 @@ pub struct Max6675 {
 /// We use BIMODE, with MOSI not connected
 /// -> When reading n bits from the data register (dr),
 ///    slave-select is driven active and n clock cycles are generated
+///
+/// The given GPIOs are expected to be already configured to the alternate functions
+/// corresponding to the given Spi interface
 impl Max6675 {
 
     pub fn init(spi: &'static mut Spi) -> Max6675 {

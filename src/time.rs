@@ -34,6 +34,25 @@ pub fn delta(a: &TickTime, b: &TickTime) -> TickTime {
 
 }
 
+#[inline]
+pub fn delta_checked(a: &TickTime, b: &TickTime) -> TickTime {
+    if (a.source as *const ClockSource) != (b.source as *const ClockSource) {
+        panic!("delta between tick times from different sources");
+    }
+    let delta_ticks = {
+        if a.ticks <= b.ticks {
+            b.ticks - a.ticks
+        } else {
+            panic!("time a has to be smaller than time b");
+        }
+    };
+    return TickTime{
+        ticks: delta_ticks,
+        source: a.source,
+    }
+
+}
+
 pub trait ClockSource {
     fn get_ticks(&'static self) -> TickTime;
     fn to_msecs(&'static self, ticks: &TickTime) -> usize;
@@ -41,6 +60,12 @@ pub trait ClockSource {
 }
 
 pub struct SystemClock;
+
+impl SystemClock {
+    pub fn reset(&self) {
+        system_clock::reset_ticks();
+    }
+}
 
 pub static SYSCLOCK: SystemClock = SystemClock{};
 
