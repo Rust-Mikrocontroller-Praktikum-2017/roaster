@@ -68,21 +68,26 @@ impl Plot {
         // TODO fix hardocing
         let curval_textbox = TextBox{
             alignment: Alignment::Right,
-            canvas: Rect{ origin: Point{x: 480 - 170 - 6, y: 194},
-                        width: 170,
-                        height: target_label_font.size + 6 // TODO compute offset
-                        },
+            canvas: Rect{
+                origin: Point{x: 480 - 170 - 6, y: 194},
+                width: 170,
+                height: target_label_font.size + 6 // TODO compute offset
+            },
+            last_effective_canvas: None,
             font: target_label_font,
             bg_color: CLEAR_COLOR,
             fg_color: axis_color,
         };
+
         let target_textbox = TextBox{
             alignment: Alignment::Right,
-            canvas: Rect{origin: curval_textbox.canvas.anchor_point(Anchor::LowerLeft)
-                                + Point{x: 0, y: 2}, // padding,
-                        width: curval_textbox.canvas.width,
-                        height: target_label_font.size + 6 // TODO compute offset
-                        },
+            canvas: Rect{
+                origin: curval_textbox.canvas.anchor_point(Anchor::LowerLeft)
+                        + Point{x: 0, y: 2}, // padding,
+                width: curval_textbox.canvas.width,
+                height: target_label_font.size + 6 // TODO compute offset
+            },
+            last_effective_canvas: None,
             font: target_label_font,
             bg_color: CLEAR_COLOR,
             fg_color: axis_color,
@@ -150,6 +155,7 @@ impl Plot {
 
         let mut tb = TextBox{
             canvas: Rect{origin:Point{x:0, y:0}, width: 18, height: 14},
+            last_effective_canvas: None,
             font: self.axis_font,
             alignment: Alignment::Center,
             bg_color: self.drag_zone_color,//Color::from_hex(0xff0000),
@@ -169,6 +175,7 @@ impl Plot {
             {
                 tb.canvas.origin = Point{x: x_tick_px - tb.canvas.width/2,
                                          y: Y_PX_RANGE.from + tick_line_radius + t_pad};
+                tb.last_effective_canvas = None;
                 let (mins, _) = secs_to_min_sec(x_tick);
                 tb.redraw(format!("{}", mins).as_str(), |p,c| {
                     lcd.draw_point_color(p, Layer::Layer1, c.to_argb1555())
@@ -208,6 +215,7 @@ impl Plot {
                                             - t_pad
                                             - tb.canvas.width,
                                          y: y_tick_px - tb.canvas.height/2};
+                tb.last_effective_canvas = None;
                 tb.redraw(format!("{}", y_tick).as_str(), |p,c| {
                     lcd.draw_point_color(p, Layer::Layer1, c.to_argb1555())
                 });
@@ -235,6 +243,7 @@ impl Plot {
             tb.canvas.origin = Point{x: X_PX_RANGE.to
                                         - tb.canvas.width / 2,
                                      y: Y_PX_RANGE.from - 17};
+            tb.last_effective_canvas = None;
             tb.redraw("[min]", |p,c| {
                 lcd.draw_point_color(p, Layer::Layer1, c.to_argb1555())
             });
@@ -247,6 +256,7 @@ impl Plot {
             tb.canvas.origin = Point{x: X_PX_RANGE.from
                                         - tb.canvas.width / 2,
                                      y: Y_PX_RANGE.to - 20};
+            tb.last_effective_canvas = None;
             tb.redraw("[°C]", |p,c| {
                 lcd.draw_point_color(p, Layer::Layer1, c.to_argb1555())
             });
