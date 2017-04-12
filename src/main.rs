@@ -181,7 +181,6 @@ fn main(hw: board::Hardware) -> ! {
                     );
 
     plot.draw_axis(&mut lcd);
-    plot.draw_ramp(&mut lcd);
 
     //let mut pid_controller = pid::PIDController::new(0.3f32, 0.0f32, 0.0f32);
     //let mut pid_controller = pid::PIDController::new(0.1f32, 0.0f32, 0.3f32); // Definitely better than first
@@ -208,16 +207,23 @@ fn main(hw: board::Hardware) -> ! {
 
         let delta_measurement = time::delta_checked(&last_measurement_system_time, &ticks);
 
-        if let State::RUNNING = state_button.state() {
-            if delta_measurement.to_msecs() >= 500 {
-                let val = 100f32;//temp_sensor.read();
-                let measurement_time = time::delta_checked(&measurement_start_system_time, &ticks).to_secs();
-                let measurement = model::TimeTemp{
-                    time: measurement_time, // TODO just integer divide here?
-                    temp: val as f32,
-                };
-                plot.add_measurement(measurement, &mut lcd);
+        if delta_measurement.to_msecs() >= 500 {
+            let val = temp;//temp_sensor.read();
+            let measurement_time = time::delta_checked(&measurement_start_system_time, &ticks).to_secs();
+            let measurement = model::TimeTemp{
+                time: measurement_time, // TODO just integer divide here?
+                temp: val as f32,
+            };
+            match state_button.state() {
+                State::RUNNING => plot.add_measurement(measurement, &mut lcd),
+                State::RESETTED => {
+                    plot.set_measurement(model::TimeTemp{time: 0f32, temp: measurement.temp}, &mut lcd);
+                    plot.update_ramp_start(&mut lcd);
+                },
+                State::STOPPED => {},
+            }
 
+            if let State::RUNNING = state_button.state() {
                 smoother.push_value(val);
                 let smooth_temp = smoother.get_average();
 
@@ -233,12 +239,12 @@ fn main(hw: board::Hardware) -> ! {
                         y: plot::Plot::transform_ranges(model::Range{from: 0f32, to: 1f32}, plot::Y_PX_RANGE, pid_value)
                     }, Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
 
-                //let pid_clamped = util::clamp(pid_value, 0f32, 1f32);
-                //temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
-                last_measurement_system_time = ticks;
+                let pid_clamped = util::clamp(pid_value, 0f32, 1f32);
+                temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
+            } else {
+                duty_cycle = 0;
             }
-        } else {
-            duty_cycle = 0;
+            last_measurement_system_time = ticks;
         }
 
         pwm_gpio.set(ticks.to_msecs() % 1000 < duty_cycle);

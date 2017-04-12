@@ -257,8 +257,19 @@ impl Plot {
         lcd.draw_line_color(y_axis_line, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
     }
 
+    ///Paints the measurement, updates last_measurement and redraws the label
     pub fn add_measurement(&mut self, measurement: TimeTemp, lcd: &mut Lcd) {
+        lcd.draw_line_color(
+            Line{
+                from: self.transform(&self.last_measurement),
+                to: self.transform(&measurement),
+            }, Layer::Layer1, Color::from_hex(0xff0000).to_argb1555(), SOLID);
 
+        self.set_measurement(measurement, lcd);
+    }
+
+    ///Updates last_measurement and redraws the label
+    pub fn set_measurement(&mut self, measurement: TimeTemp, lcd: &mut Lcd) {
         let ticks = SYSCLOCK.get_ticks();
         if self.last_curval_textbox_update.map_or(true, |x| delta(&x, &ticks).to_msecs() > 1000) {
             self.last_curval_textbox_update = Some(ticks);
@@ -267,13 +278,7 @@ impl Plot {
             });
         }
 
-        lcd.draw_line_color(
-            Line{
-                from: self.transform(&self.last_measurement),
-                to: self.transform(&measurement),
-            }, Layer::Layer1, Color::from_hex(0xff0000).to_argb1555(), SOLID);
         self.last_measurement = measurement;
-
     }
 
     pub fn draw_ramp(&mut self, lcd: &mut Lcd) {
@@ -318,6 +323,11 @@ impl Plot {
             });
         }
 
+        self.draw_ramp(lcd);
+    }
+
+    pub fn update_ramp_start(&mut self, lcd: &mut Lcd) {
+        self.ramp.start = self.last_measurement;
         self.draw_ramp(lcd);
     }
 
