@@ -27,6 +27,8 @@ use util::*;
 use plot::DragDirection;
 use embedded::util::delay;
 
+use collections::*;
+
 use collections::boxed::Box;
 use leak::Leak;
 
@@ -148,20 +150,47 @@ fn main(hw: board::Hardware) -> ! {
                    gpio::Resistor::NoPull)
         .expect("Could not configure pwm pin");
 
+
+    let axis_color = Color::from_hex(0xffffff);
+    let drag_color = Color::from_hex(0x222222);
+    let clear_color = Color::rgba(0,0,0,0);
+
     // lcd controller
     let mut lcd = lcd::init(ltdc, rcc, &mut gpio);
     lcd.clear_screen();
 
     lcd.set_background_color(Color::from_hex(0x000000));
 
-    let font = Box::new(Font::new(TTF, 11).unwrap()).leak();
+    let plot_font = Box::new(Font::new(TTF, 11).unwrap()).leak();
 
     let mut plot = plot::Plot::new(model::Range::new(0f32, (5*60) as f32),
                                    model::Range::new(0f32, 100f32),
-                                   font);
+                                   plot_font,
+                                   axis_color,
+                                   drag_color,
+                                   70, // drag timeout
+                    );
+
+    let rtval_font = Box::new(Font::new(TTF, 14).unwrap()).leak();
+    let curval_textbox = TextBox{
+        alignment: Alignment::Right,
+        canvas: Rect{ origin: Point{x: 480 - 170 - 6, y: 194},
+                      width: 170, height: rtval_font.size + 6},
+        font: rtval_font,
+        bg_color: clear_color,
+        fg_color: axis_color,
+    };
+    let target_textbox = TextBox{
+        alignment: Alignment::Right,
+        canvas: Rect{origin: curval_textbox.canvas.anchor_point(Anchor::LowerLeft)
+                            + Point{x: 0, y: 2}, // padding,
+                     width: curval_textbox.canvas.width, height: rtval_font.size + 6},
+        font: rtval_font,
+        bg_color: clear_color,
+        fg_color: axis_color,
+    };
 
     plot.draw_axis(&mut lcd);
-
 
     touch::check_family_id(&mut i2c_3).unwrap();
 
@@ -178,6 +207,10 @@ fn main(hw: board::Hardware) -> ! {
 
     let mut temp = 20f32;
 
+    let mut last_curval_textbox_update = SYSCLOCK.get_ticks();
+    let mut last_target_textbox_update = SYSCLOCK.get_ticks();
+
+
     loop {
 
         let ticks = SYSCLOCK.get_ticks();
@@ -191,6 +224,7 @@ fn main(hw: board::Hardware) -> ! {
                 temp: val as f32,
             };
             plot.add_measurement(measurement, &mut lcd);
+
 
             let ramp_target_temp = ramp::evaluate_ramp(ticks.to_secs(), ramp_start, target);
 
@@ -208,7 +242,10 @@ fn main(hw: board::Hardware) -> ! {
 
         // poll for new touch data
 
+        let mut processed_touches = false;
         for touch in &touch::touches(&mut i2c_3).unwrap() {
+
+            processed_touches = true;
 
             let touch = plot::Touch{
                 location: Point{
@@ -248,6 +285,30 @@ fn main(hw: board::Hardware) -> ! {
                 _ => (),
             }
 
+
+        }
+
+        const CURVAL_LABEL: &'static str = "Cur";
+        const TARGET_LABEL: &'static str = "Tar";
+        const LABEL_LEN: usize = 3;
+
+        let touch_drew_over_curval_textbox_needs_redraw =
+            processed_touches &&
+            time::delta(&last_curval_textbox_update, &ticks).to_msecs() > 1000/10;
+
+        if time::delta(&last_curval_textbox_update, &ticks).to_msecs() > 1000 {
+            last_curval_textbox_update = ticks;
+            curval_textbox.redraw(rtval_format(CURVAL_LABEL, LABEL_LEN, last_measurement).as_str(), |p,c| {
+                lcd.draw_point_color(p, Layer::Layer2, c.to_argb1555());
+            });
+        }
+
+        if processed_touches &&
+           time::delta(&last_target_textbox_update, &ticks).to_msecs() > 1000/10  {
+            last_target_textbox_update = ticks;
+            target_textbox.redraw(rtval_format(TARGET_LABEL, LABEL_LEN, target).as_str(), |p,c| {
+                lcd.draw_point_color(p, Layer::Layer2, c.to_argb1555());
+            });
         }
 
     }
@@ -299,4 +360,9 @@ fn temp_sensor_init_spi2(gpio: &mut Gpio, spi_2: &'static mut Spi) -> Max6675 {
 
 }
 
-
+#[inline]
+fn rtval_format(label: &str, label_len: usize, measurement: model::TimeTemp) -> String {
+    let mins = measurement.time as usize / 60;
+    let secs = measurement.time as usize % 60;
+    format!("{:.*} {:>5.1}°C @ {:02}:{:02}", label_len, label, measurement.temp, mins, secs)
+}

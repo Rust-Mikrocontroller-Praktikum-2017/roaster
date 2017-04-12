@@ -13,6 +13,9 @@ pub struct Plot {
     x_range: Range<f32>,
     y_range: Range<f32>,
     axis_font: &'static Font<'static>,
+    axis_color: Color,
+    drag_zone_color: Color,
+    drag_timeout: usize,
 }
 
 #[derive(Clone,Copy)]
@@ -52,7 +55,7 @@ const X_TICK_DIST: f32 = 30f32;
 const Y_TICK_DIST: f32 = 25f32;
 
 impl Plot {
-    pub fn new(x_range: Range<f32>, y_range: Range<f32>, axis_font: &'static Font<'static>) -> Plot {
+    pub fn new(x_range: Range<f32>, y_range: Range<f32>, axis_font: &'static Font<'static>, axis_color: Color, drag_zone_color: Color, drag_timeout: usize) -> Plot {
         Plot {
             last_measurement: TimeTemp{time: 0f32, temp: 0f32},
             x_range: x_range,
@@ -60,6 +63,9 @@ impl Plot {
             current_drag: None,
             drag_scale_delta: (0.1f32,0.1f32),
             axis_font: axis_font,
+            axis_color: axis_color,
+            drag_zone_color: drag_zone_color,
+            drag_timeout: drag_timeout,
         }
         // TODO assert drag_horizontal_zone and drag_vertical_zone are not overlapping
     }
@@ -80,8 +86,6 @@ impl Plot {
     }
 
     pub fn draw_axis(&self, lcd: &mut Lcd) {
-        let axis_color = Color::from_hex(0xffffff);
-        let drag_color = Color::from_hex(0x222222);
 
         let x_axis_line = Line {
             from: Point{x: X_PX_RANGE.from, y: Y_PX_RANGE.from},
@@ -92,18 +96,18 @@ impl Plot {
             to: Point{x: X_PX_RANGE.from, y: Y_PX_RANGE.to}
         };
 
-        lcd.fill_rect_color(Y_PX_DRAG_RANGE, Layer::Layer1, drag_color.to_argb1555());
-        lcd.fill_rect_color(X_PX_DRAG_RANGE, Layer::Layer1, drag_color.to_argb1555());
+        lcd.fill_rect_color(Y_PX_DRAG_RANGE, Layer::Layer1, self.drag_zone_color.to_argb1555());
+        lcd.fill_rect_color(X_PX_DRAG_RANGE, Layer::Layer1, self.drag_zone_color.to_argb1555());
 
-        lcd.draw_line_color(x_axis_line, Layer::Layer1, axis_color.to_argb1555());
-        lcd.draw_line_color(y_axis_line, Layer::Layer1, axis_color.to_argb1555());
+        lcd.draw_line_color(x_axis_line, Layer::Layer1, self.axis_color.to_argb1555());
+        lcd.draw_line_color(y_axis_line, Layer::Layer1, self.axis_color.to_argb1555());
 
         let mut tb = TextBox{
             canvas: Rect{origin:Point{x:0, y:0}, width: 18, height: 14},
             font: self.axis_font,
             alignment: Alignment::Center,
-            bg_color: drag_color,//Color::from_hex(0xff0000),
-            fg_color: axis_color,
+            bg_color: self.drag_zone_color,//Color::from_hex(0xff0000),
+            fg_color: self.axis_color,
         };
 
 
@@ -127,7 +131,7 @@ impl Plot {
             lcd.draw_line_color(Line {
                 from: Point{x: x_tick_px, y: Y_PX_RANGE.from - 2},
                 to: Point{x: x_tick_px, y: Y_PX_RANGE.from + 2}
-            }, Layer::Layer1, axis_color.to_argb1555());
+            }, Layer::Layer1, self.axis_color.to_argb1555());
 
 
             x_tick += X_TICK_DIST;
@@ -158,7 +162,7 @@ impl Plot {
              lcd.draw_line_color(Line {
                 from: Point{x: X_PX_RANGE.from - tick_line_radius, y: y_tick_px},
                 to: Point{x: X_PX_RANGE.from + tick_line_radius, y: y_tick_px}
-            }, Layer::Layer1, axis_color.to_argb1555());
+            }, Layer::Layer1, self.axis_color.to_argb1555());
 
             y_tick += Y_TICK_DIST;
         }
@@ -203,7 +207,7 @@ impl Plot {
 
         // Timeout between touches & switch of zones
         let since_last_msecs = delta(&drag.last_touch.time, &touch.time).to_msecs();
-        if since_last_msecs >= 40 || drag.direction != drag_zone {
+        if since_last_msecs >= self.drag_timeout || drag.direction != drag_zone {
             self.current_drag = None; // Cancel current drag
             return None;
         }
