@@ -179,7 +179,7 @@ fn main(hw: board::Hardware) -> ! {
                                    axis_color,
                                    grid_color,
                                    drag_color,
-                                   70, // drag timeout
+                                   80, // drag timeout
                     );
 
     plot.draw_axis(&mut lcd);
