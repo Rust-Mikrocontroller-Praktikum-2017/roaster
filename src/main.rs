@@ -154,7 +154,7 @@ fn main(hw: board::Hardware) -> ! {
 
 
     let axis_color = Color::from_hex(0xffffff);
-    let drag_color = Color::from_hex(0x222222);
+    let drag_color = Color::from_hex(0x000000);
     let grid_color = Color::from_hex(0x444444);
 
     // lcd controller
