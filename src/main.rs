@@ -185,8 +185,9 @@ fn main(hw: board::Hardware) -> ! {
     plot.draw_axis(&mut lcd);
 
     //let mut pid_controller = pid::PIDController::new(0.3f32, 0.0f32, 0.0f32);
-    //let mut pid_controller = pid::PIDController::new(0.1f32, 0.0f32, 0.3f32); // Definitely better than first
-    let mut pid_controller = pid::PIDController::new(0.2f32, 0.0f32, 0.3f32);
+    //let mut pid_controller = pid::PIDController::new(0.1f32, 0.0f32, 0.3f32); // Definitely better than first, but overshooting
+    //let mut pid_controller = pid::PIDController::new(0.2f32, 0.0f32, 0.3f32); // Not much different
+    let mut pid_controller = pid::PIDController::new(0.2f32, 0.0f32, 0.6f32); // Not much different
 
     let mut smoother = pid::Smoother::new(10);
 
