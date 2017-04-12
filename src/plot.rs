@@ -202,8 +202,8 @@ impl Plot {
 
                 // TODO move target
                 match dir {
-                    DragDirection::Horizontal => self.ramp.end.time += delta,
-                    DragDirection::Vertical   => self.ramp.end.temp -= delta,
+                    DragDirection::Horizontal => self.ramp.end.time = util::clamp_range(self.ramp.end.time + delta, self.x_range),
+                    DragDirection::Vertical   => self.ramp.end.temp = util::clamp_range(self.ramp.end.temp - delta, self.y_range),
                     _                         => {},
                 }
 
