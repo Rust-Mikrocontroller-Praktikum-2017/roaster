@@ -169,7 +169,8 @@ impl Plot {
             {
                 tb.canvas.origin = Point{x: x_tick_px - tb.canvas.width/2,
                                          y: Y_PX_RANGE.from + tick_line_radius + t_pad};
-                tb.redraw(format!("{}", x_tick).as_str(), |p,c| {
+                let (mins, _) = secs_to_min_sec(x_tick);
+                tb.redraw(format!("{}", mins).as_str(), |p,c| {
                     lcd.draw_point_color(p, Layer::Layer1, c.to_argb1555())
                 });
             }
@@ -359,10 +360,12 @@ fn signed_delta(from: u16, to: u16) -> f32 {
     return ((to as i32) - (from as i32)) as f32;
 }
 
+fn secs_to_min_sec(secs: f32) -> (usize, usize) {
+    (secs as usize / 60, secs as usize % 60)
+}
 
 #[inline]
 fn rtval_format(label: &str, label_len: usize, measurement: TimeTemp) -> String {
-    let mins = measurement.time as usize / 60;
-    let secs = measurement.time as usize % 60;
+    let (mins, secs) = secs_to_min_sec(measurement.time);
     format!("{:.*} {:>5.1}°C @ {:02}:{:02}", label_len, label, measurement.temp, mins, secs)
 }
