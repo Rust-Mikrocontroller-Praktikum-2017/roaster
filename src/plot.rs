@@ -16,6 +16,7 @@ pub struct Plot {
     y_range: Range<f32>,
     axis_font: &'static Font<'static>,
     axis_color: Color,
+    grid_color: Color,
     drag_zone_color: Color,
     drag_timeout: usize,
     ramp: Ramp,
@@ -62,7 +63,7 @@ const LABEL_LEN: usize = 3;
 
 
 impl Plot {
-    pub fn new(x_range: Range<f32>, y_range: Range<f32>, axis_font: &'static Font<'static>, target_label_font: &'static Font<'static>, axis_color: Color, drag_zone_color: Color, drag_timeout: usize) -> Plot {
+    pub fn new(x_range: Range<f32>, y_range: Range<f32>, axis_font: &'static Font<'static>, target_label_font: &'static Font<'static>, axis_color: Color, grid_color: Color, drag_zone_color: Color, drag_timeout: usize) -> Plot {
 
         // TODO fix hardocing
         let curval_textbox = TextBox{
@@ -95,6 +96,7 @@ impl Plot {
             drag_scale_delta: (0.1f32,0.1f32),
             axis_font: axis_font,
             axis_color: axis_color,
+            grid_color: grid_color,
             drag_zone_color: drag_zone_color,
             drag_timeout: drag_timeout,
             target_textbox: target_textbox,
@@ -146,8 +148,8 @@ impl Plot {
         lcd.fill_rect_color(Y_PX_DRAG_RANGE, Layer::Layer1, self.drag_zone_color.to_argb1555());
         lcd.fill_rect_color(X_PX_DRAG_RANGE, Layer::Layer1, self.drag_zone_color.to_argb1555());
 
-        lcd.draw_line_color(x_axis_line, Layer::Layer1, self.axis_color.to_argb1555());
-        lcd.draw_line_color(y_axis_line, Layer::Layer1, self.axis_color.to_argb1555());
+        lcd.draw_line_color(x_axis_line, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
+        lcd.draw_line_color(y_axis_line, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
 
         let mut tb = TextBox{
             canvas: Rect{origin:Point{x:0, y:0}, width: 18, height: 14},
@@ -175,10 +177,17 @@ impl Plot {
                 });
             }
 
+            //Axis ticks
             lcd.draw_line_color(Line {
                 from: Point{x: x_tick_px, y: Y_PX_RANGE.from - 2},
                 to: Point{x: x_tick_px, y: Y_PX_RANGE.from + 2}
-            }, Layer::Layer1, self.axis_color.to_argb1555());
+            }, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
+
+            //Grid
+            lcd.draw_line_color(Line {
+                from: Point{x: x_tick_px, y: Y_PX_RANGE.from},
+                to: Point{x: x_tick_px, y: Y_PX_RANGE.to},
+            }, Layer::Layer1, self.grid_color.to_argb1555(), DASHED);
 
 
             x_tick += X_TICK_DIST;
@@ -206,10 +215,17 @@ impl Plot {
                 });
             }
 
-             lcd.draw_line_color(Line {
+            //Axis ticks
+            lcd.draw_line_color(Line {
                 from: Point{x: X_PX_RANGE.from - tick_line_radius, y: y_tick_px},
                 to: Point{x: X_PX_RANGE.from + tick_line_radius, y: y_tick_px}
-            }, Layer::Layer1, self.axis_color.to_argb1555());
+            }, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
+
+            //Grid
+            lcd.draw_line_color(Line {
+                from: Point{x: X_PX_RANGE.from, y: y_tick_px},
+                to: Point{x: X_PX_RANGE.to, y: y_tick_px},
+            }, Layer::Layer1, self.grid_color.to_argb1555(), DASHED);
 
             y_tick += Y_TICK_DIST;
         }
@@ -229,21 +245,21 @@ impl Plot {
             Line{
                 from: self.transform(&self.last_measurement),
                 to: self.transform(&measurement),
-            }, Layer::Layer1, Color::from_hex(0xff0000).to_argb1555());
+            }, Layer::Layer1, Color::from_hex(0xff0000).to_argb1555(), SOLID);
         self.last_measurement = measurement;
 
     }
 
     pub fn draw_ramp(&mut self, lcd: &mut Lcd) {
         //Clear old line
-        lcd.draw_line_color(self.last_ramp_line, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
+        lcd.draw_line_color(self.last_ramp_line, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555(), SOLID);
 
         //Draw new line
         let p_start = self.transform(&self.ramp.start);
         let p_end = self.transform(&self.ramp.end);
         let line = Line{from: p_start, to: p_end};
         let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
-        lcd.draw_line_color(line, Layer::Layer2, c);
+        lcd.draw_line_color(line, Layer::Layer2, c, SOLID);
         self.last_ramp_line = line;
     }
 

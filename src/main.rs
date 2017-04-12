@@ -155,6 +155,7 @@ fn main(hw: board::Hardware) -> ! {
 
     let axis_color = Color::from_hex(0xffffff);
     let drag_color = Color::from_hex(0x222222);
+    let grid_color = Color::from_hex(0x444444);
 
     // lcd controller
     let mut lcd = lcd::init(ltdc, rcc, &mut gpio);
@@ -174,6 +175,7 @@ fn main(hw: board::Hardware) -> ! {
                                    plot_font,
                                    rtval_font,
                                    axis_color,
+                                   grid_color,
                                    drag_color,
                                    70, // drag timeout
                     );
