@@ -42,6 +42,12 @@ pub trait ClockSource {
 
 pub struct SystemClock;
 
+impl SystemClock {
+    pub fn reset(&self) {
+        system_clock::reset_ticks();
+    }
+}
+
 pub static SYSCLOCK: SystemClock = SystemClock{};
 
 impl ClockSource for SystemClock {

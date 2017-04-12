@@ -15,6 +15,7 @@ pub mod time;
 pub mod util;
 pub mod pid;
 pub mod ramp;
+pub mod state_button;
 mod leak;
 
 use stm32f7::{system_clock,board,embedded,sdram,lcd,touch,i2c};
@@ -153,6 +154,7 @@ fn main(hw: board::Hardware) -> ! {
     touch::check_family_id(&mut i2c_3).unwrap();
 
     loop {
+    SYSCLOCK.reset();
     lcd.clear_screen();
 
     lcd.set_background_color(Color::from_hex(0x000000));
@@ -183,7 +185,12 @@ fn main(hw: board::Hardware) -> ! {
 
     let mut temp = 20f32;
 
-    let state_button = Rect{origin: Point{x: 440, y: 0}, width: 40, height: 40};
+    let mut state_button = state_button::StateButton::new(
+        Color::from_hex(0x222222),
+        Rect{origin: Point{x: 440, y: 0}, width: 40, height: 40}
+    );
+    state_button.render(&mut lcd);
+
 
     'mainloop: loop {
 
@@ -258,9 +265,12 @@ fn main(hw: board::Hardware) -> ! {
                 _ => (),
             }
 
-            if state_button.contains_point(&touch.location) {
-                //Switch state
-                break 'mainloop;
+            if let Some(new_state) = state_button.handle_touch(touch) {
+                match new_state {
+                    state_button::State::RESETTED => break 'mainloop,
+                    _ => {},
+                }
+                state_button.render(&mut lcd);
             }
 
         }
