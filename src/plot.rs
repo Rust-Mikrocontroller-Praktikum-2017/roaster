@@ -41,7 +41,7 @@ struct Drag {
 }
 
 pub const X_PX_RANGE: Range<u16> = Range{from: 24, to: 460};
-pub const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 20};
+pub const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 21};
 
 const X_PX_DRAG_RANGE: Rect = Rect{ // TODO
     origin: Point{ x: 0, y: 232},
@@ -227,6 +227,31 @@ impl Plot {
 
             y_tick += Y_TICK_DIST;
         }
+
+        //X Axis label
+        {
+            tb.alignment = Alignment::Center;
+            tb.canvas.width = 40;
+            tb.canvas.origin = Point{x: X_PX_RANGE.to
+                                        - tb.canvas.width / 2,
+                                     y: Y_PX_RANGE.from - 17};
+            tb.redraw("[min]", |p,c| {
+                lcd.draw_point_color(p, Layer::Layer1, c.to_argb1555())
+            });
+        }
+
+        //Y Axis label
+        {
+            tb.alignment = Alignment::Center;
+            tb.canvas.width = 40;
+            tb.canvas.origin = Point{x: X_PX_RANGE.from
+                                        - tb.canvas.width / 2,
+                                     y: Y_PX_RANGE.to - 20};
+            tb.redraw("[°C]", |p,c| {
+                lcd.draw_point_color(p, Layer::Layer1, c.to_argb1555())
+            });
+        }
+
 
         lcd.draw_line_color(x_axis_line, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
         lcd.draw_line_color(y_axis_line, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
