@@ -51,7 +51,7 @@ const Y_PX_DRAG_RANGE: Rect = Rect{ // TODO
     height: 272,
 };
 
-const X_TICK_DIST: f32 = 30f32;
+const X_TICK_DIST: f32 = 60f32;
 const Y_TICK_DIST: f32 = 25f32;
 
 impl Plot {
@@ -185,11 +185,22 @@ impl Plot {
 
     }
 
+    pub fn draw_ramp(&mut self, lcd: &mut Lcd) {
+        //Clear old line
+        lcd.draw_line_color(self.last_ramp_line, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
+
+        //Draw new line
+        let p_start = self.transform(&self.ramp.start);
+        let p_end = self.transform(&self.ramp.end);
+        let line = Line{from: p_start, to: p_end};
+        let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
+        lcd.draw_line_color(line, Layer::Layer2, c);
+        self.last_ramp_line = line;
+    }
+
     pub fn handle_touch(&mut self, touch: Touch, lcd: &mut Lcd) {
         match self.touch_drag(touch) {
             Some((dir, delta)) => {
-                //Clear old line
-                lcd.draw_line_color(self.last_ramp_line, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
 
                 // TODO move target
                 match dir {
@@ -205,13 +216,7 @@ impl Plot {
 
                 self.ramp.start = self.last_measurement;
 
-                //Draw new line
-                let p_start = self.transform(&self.ramp.start);
-                let p_end = self.transform(&self.ramp.end);
-                let line = Line{from: p_start, to: p_end};
-                let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
-                lcd.draw_line_color(line, Layer::Layer2, c);
-                self.last_ramp_line = line;
+                self.draw_ramp(lcd);
             },
             _ => (),
         }

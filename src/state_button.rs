@@ -34,6 +34,10 @@ impl StateButton {
         }
     }
 
+    pub fn state(&self) -> State {
+        self.state
+    }
+
     pub fn render(&self, lcd: &mut lcd::Lcd) {
         lcd.fill_rect_color(self.rect, lcd::Layer::Layer1, self.bg_color.to_argb1555());
         let center_color = match self.state {

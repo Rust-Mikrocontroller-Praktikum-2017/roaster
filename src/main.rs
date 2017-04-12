@@ -32,6 +32,7 @@ use collections::boxed::Box;
 use leak::Leak;
 
 use self::temp_sensor::{TemperatureSensor,Max6675};
+use state_button::State;
 
 static TTF: &[u8] = include_bytes!("RobotoMono-Bold.ttf");
 
@@ -166,6 +167,7 @@ fn main(hw: board::Hardware) -> ! {
                                    font);
 
     plot.draw_axis(&mut lcd);
+    plot.draw_ramp(&mut lcd);
 
 
     //let mut pid_controller = pid::PIDController::new(0.3f32, 0.0f32, 0.0f32);
@@ -174,8 +176,8 @@ fn main(hw: board::Hardware) -> ! {
 
     let mut smoother = pid::Smoother::new(10);
 
-    let mut last_measurement_time = SYSCLOCK.get_ticks();
-    let mut last_measurement = model::TimeTemp{time: 0f32, temp: 0f32};
+    let mut measurement_start_system_time = SYSCLOCK.get_ticks();
+    let mut last_measurement_system_time = SYSCLOCK.get_ticks();
 
     let mut duty_cycle: usize = 0;
 
@@ -192,29 +194,33 @@ fn main(hw: board::Hardware) -> ! {
 
         let ticks = SYSCLOCK.get_ticks();
 
-        let delta_measurement = time::delta(&ticks, &last_measurement_time);
+        let delta_measurement = time::delta_checked(&last_measurement_system_time, &ticks);
 
-        if delta_measurement.to_msecs() >= 500 {
-            let val = temp_sensor.read();
-            let measurement = model::TimeTemp{
-                time: ticks.to_secs(), // TODO just integer divide here?
-                temp: val as f32,
-            };
-            plot.add_measurement(measurement, &mut lcd);
-            
-            smoother.push_value(val);
-            let smooth_temp = smoother.get_average();
+        if let State::RUNNING = state_button.state() {
+            if delta_measurement.to_msecs() >= 500 {
+                let val = temp_sensor.read();
+                let measurement_time = time::delta_checked(&measurement_start_system_time, &ticks).to_secs();
+                let measurement = model::TimeTemp{
+                    time: measurement_time, // TODO just integer divide here?
+                    temp: val as f32,
+                };
+                plot.add_measurement(measurement, &mut lcd);
+                
+                smoother.push_value(val);
+                let smooth_temp = smoother.get_average();
 
-            let ramp_target_temp = plot.ramp().evaluate(ticks.to_secs());
+                let ramp_target_temp = plot.ramp().evaluate(measurement_time);
 
-            let error = ramp_target_temp - smooth_temp;
-            let pid_value = pid_controller.cycle(error, &delta_measurement);
-            duty_cycle = if pid_value < 0f32 { 0 } else if pid_value > 1f32 { 1000 } else {(pid_value * 1000f32) as usize};
-            lcd.draw_point_color(plot.transform(&model::TimeTemp{time: ticks.to_secs(), temp: pid_value * 100f32}), Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
-            let pid_clamped = if pid_value < 0f32 { 0f32 } else if pid_value > 1f32 { 1f32 } else {pid_value};
-            temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
-            last_measurement_time = ticks;
-            last_measurement = measurement;
+                let error = ramp_target_temp - smooth_temp;
+                let pid_value = pid_controller.cycle(error, &delta_measurement);
+                duty_cycle = if pid_value < 0f32 { 0 } else if pid_value > 1f32 { 1000 } else {(pid_value * 1000f32) as usize};
+                lcd.draw_point_color(plot.transform(&model::TimeTemp{time: measurement_time, temp: pid_value * 100f32}), Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
+                let pid_clamped = if pid_value < 0f32 { 0f32 } else if pid_value > 1f32 { 1f32 } else {pid_value};
+                temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
+                last_measurement_system_time = ticks;
+            }
+        } else {
+            duty_cycle = 0;
         }
 
         pwm_gpio.set(ticks.to_msecs() % 1000 < duty_cycle);
@@ -231,11 +237,21 @@ fn main(hw: board::Hardware) -> ! {
                 time: ticks
             };
 
-            plot.handle_touch(touch, &mut lcd);
+            match state_button.state() {
+                State::RUNNING | State::RESETTED => 
+                    plot.handle_touch(touch, &mut lcd),
+                _ => {},
+            }
 
             if let Some(new_state) = state_button.handle_touch(touch) {
                 match new_state {
-                    state_button::State::RESETTED => break 'mainloop,
+                    State::RESETTED => {
+                        break 'mainloop;
+                    },
+                    State::RUNNING => {
+                        measurement_start_system_time = SYSCLOCK.get_ticks();
+                        last_measurement_system_time = measurement_start_system_time;
+                    },
                     _ => {},
                 }
                 state_button.render(&mut lcd);
