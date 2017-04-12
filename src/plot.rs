@@ -2,6 +2,7 @@ use model::TimeTemp;
 use stm32f7::lcd::{Lcd, Color, Layer, Point, Line, Rect,TextBox,Font,Alignment};
 use model::{Range, Time, Temperature};
 use time::{TickTime,delta};
+use ramp::Ramp;
 use util;
 
 use collections::*;
@@ -13,6 +14,8 @@ pub struct Plot {
     x_range: Range<f32>,
     y_range: Range<f32>,
     axis_font: &'static Font<'static>,
+    ramp: Ramp,
+    last_ramp_line: Line,
 }
 
 #[derive(Clone,Copy)]
@@ -60,6 +63,14 @@ impl Plot {
             current_drag: None,
             drag_scale_delta: (0.1f32,0.1f32),
             axis_font: axis_font,
+            ramp: Ramp {
+                start: TimeTemp{time: 0f32, temp: 0f32},
+                end: TimeTemp{time: 60f32, temp: 100f32},
+            },
+            last_ramp_line: Line {
+                from: Point{x: 0, y: 0},
+                to: Point{x: 0, y: 0},
+            }
         }
         // TODO assert drag_horizontal_zone and drag_vertical_zone are not overlapping
     }
@@ -174,7 +185,39 @@ impl Plot {
 
     }
 
-    pub fn event_loop_touch(&mut self, touch: Touch) -> Option<(DragDirection,f32)> {
+    pub fn handle_touch(&mut self, touch: Touch, lcd: &mut Lcd) {
+        match self.touch_drag(touch) {
+            Some((dir, delta)) => {
+                //Clear old line
+                lcd.draw_line_color(self.last_ramp_line, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
+
+                // TODO move target
+                match dir {
+                    DragDirection::Horizontal => self.ramp.end.time += delta,
+                    DragDirection::Vertical   => self.ramp.end.temp -= delta,
+                    _                         => {},
+                }
+
+                //Target has to be in the future
+                if self.ramp.end.time < self.last_measurement.time + 10f32 {
+                    self.ramp.end.time = self.last_measurement.time + 10f32;
+                }
+
+                self.ramp.start = self.last_measurement;
+
+                //Draw new line
+                let p_start = self.transform(&self.ramp.start);
+                let p_end = self.transform(&self.ramp.end);
+                let line = Line{from: p_start, to: p_end};
+                let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
+                lcd.draw_line_color(line, Layer::Layer2, c);
+                self.last_ramp_line = line;
+            },
+            _ => (),
+        }
+    }
+
+    fn touch_drag(&mut self, touch: Touch) -> Option<(DragDirection,f32)> {
 
         let drag_zone = {
             if X_PX_DRAG_RANGE.contains_point(&touch.location) {
@@ -226,6 +269,10 @@ impl Plot {
 
         return Some((drag.direction, touch_delta));
 
+    }
+
+    pub fn ramp(&self) -> &Ramp {
+        &self.ramp
     }
 
 }

@@ -177,10 +177,6 @@ fn main(hw: board::Hardware) -> ! {
     let mut last_measurement_time = SYSCLOCK.get_ticks();
     let mut last_measurement = model::TimeTemp{time: 0f32, temp: 0f32};
 
-    let mut target = model::TimeTemp{time: 10.0f32, temp: 30.0f32};
-    let mut ramp_start = model::TimeTemp{time: 0f32, temp: 0f32};
-    let mut last_line = lcd::Line{from: Point{x:0, y:0}, to: Point{x:0, y:0}};
-
     let mut duty_cycle: usize = 0;
 
     let mut temp = 20f32;
@@ -209,7 +205,7 @@ fn main(hw: board::Hardware) -> ! {
             smoother.push_value(val);
             let smooth_temp = smoother.get_average();
 
-            let ramp_target_temp = ramp::evaluate_ramp(ticks.to_secs(), ramp_start, target);
+            let ramp_target_temp = plot.ramp().evaluate(ticks.to_secs());
 
             let error = ramp_target_temp - smooth_temp;
             let pid_value = pid_controller.cycle(error, &delta_measurement);
@@ -235,35 +231,7 @@ fn main(hw: board::Hardware) -> ! {
                 time: ticks
             };
 
-            match plot.event_loop_touch(touch) {
-                Some((dir, delta)) => {
-                    //Clear old line
-                    lcd.draw_line_color(last_line, Layer::Layer2, Color::rgba(0, 0, 0, 0).to_argb1555());
-
-                    // TODO move target
-                    match dir {
-                        DragDirection::Horizontal => target.time += delta,
-                        DragDirection::Vertical   => target.temp -= delta,
-                        _                         => {},
-                    }
-
-                    //Target has to be in the future
-                    if target.time < last_measurement.time + 10f32 {
-                        target.time = last_measurement.time + 10f32;
-                    }
-
-                    ramp_start = last_measurement;
-
-                    //Draw new line
-                    let p_start = plot.transform(&ramp_start);
-                    let p_end = plot.transform(&target);
-                    let line = Line{from: p_start, to: p_end};
-                    let c: u16 = Color::from_hex(0x00ff00).to_argb1555();
-                    lcd.draw_line_color(line, Layer::Layer2, c);
-                    last_line = line;
-                },
-                _ => (),
-            }
+            plot.handle_touch(touch, &mut lcd);
 
             if let Some(new_state) = state_button.handle_touch(touch) {
                 match new_state {
