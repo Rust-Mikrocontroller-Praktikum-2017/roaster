@@ -213,9 +213,7 @@ fn main(hw: board::Hardware) -> ! {
 
                 let error = ramp_target_temp - smooth_temp;
                 let pid_value = pid_controller.cycle(error, &delta_measurement);
-                duty_cycle = if pid_value < 0f32 { 0 }
-                             else if pid_value > 1f32 { 1000 }
-                             else {(pid_value * 1000f32) as usize};
+                duty_cycle = (util::clamp(pid_value, 0f32, 1f32) * 1000f32) as usize;
 
                 lcd.draw_point_color(
                     Point{
@@ -223,7 +221,7 @@ fn main(hw: board::Hardware) -> ! {
                         y: plot::Plot::transform_ranges(model::Range{from: 0f32, to: 1f32}, plot::Y_PX_RANGE, pid_value)
                     }, Layer::Layer2, Color::from_hex(0x0000ff).to_argb1555());
 
-                //let pid_clamped = if pid_value < 0f32 { 0f32 } else if pid_value > 1f32 { 1f32 } else {pid_value};
+                //let pid_clamped = util::clamp(pid_value, 0f32, 1f32);
                 //temp += (pid_clamped - 0.3) * delta_measurement.to_secs() * 1.0;
                 last_measurement_system_time = ticks;
             }
