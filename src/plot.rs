@@ -71,7 +71,7 @@ impl Plot {
             canvas: Rect{
                 origin: Point{x: 480 - 170 - 6, y: 194},
                 width: 170,
-                height: target_label_font.size + 6 // TODO compute offset
+                height: target_label_font.size + 4 // TODO compute offset
             },
             last_effective_canvas: None,
             font: target_label_font,
@@ -83,7 +83,7 @@ impl Plot {
             alignment: Alignment::Right,
             canvas: Rect{
                 origin: curval_textbox.canvas.anchor_point(Anchor::LowerLeft)
-                        + Point{x: 0, y: 2}, // padding,
+                        + Point{x: 0, y: 0}, // padding,
                 width: curval_textbox.canvas.width,
                 height: target_label_font.size + 6 // TODO compute offset
             },
