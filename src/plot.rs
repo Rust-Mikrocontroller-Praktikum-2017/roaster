@@ -281,7 +281,7 @@ impl Plot {
     ///Updates last_measurement and redraws the label
     pub fn set_measurement(&mut self, measurement: TimeTemp, lcd: &mut Lcd) {
         let ticks = SYSCLOCK.get_ticks();
-        if self.last_curval_textbox_update.map_or(true, |x| delta(&x, &ticks).to_msecs() > 1000) {
+        if self.last_curval_textbox_update.map_or(true, |x| delta(&x, &ticks).to_msecs() > 100/10) {
             self.last_curval_textbox_update = Some(ticks);
             self.curval_textbox.redraw(rtval_format(CURVAL_LABEL, LABEL_LEN, measurement).as_str(), |p,c| {
                 lcd.draw_point_color(p, Layer::Layer2, c.to_argb1555());
@@ -332,7 +332,7 @@ impl Plot {
         self.ramp.start = self.last_measurement;
 
         let ticks = SYSCLOCK.get_ticks();
-        if self.last_target_textbox_update.map_or(true, |x| delta(&x, &ticks).to_msecs() > 1000) {
+        if self.last_target_textbox_update.map_or(true, |x| delta(&x, &ticks).to_msecs() > 1000/10) {
             self.last_target_textbox_update = Some(ticks);
             self.target_textbox.redraw(rtval_format(TARGET_LABEL, LABEL_LEN, self.ramp.end).as_str(), |p,c| {
                 lcd.draw_point_color(p, Layer::Layer2, c.to_argb1555());
