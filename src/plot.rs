@@ -306,10 +306,6 @@ impl Plot {
 
     pub fn handle_touch(&mut self, touch_event: TouchEvent, lcd: &mut Lcd) {
 
-        if let TouchEvent::TouchUp(_) = touch_event {
-            return;
-        }
-
         let touch = touch_event.touch();
 
         let drag = self.get_drag_gesture(touch);
@@ -332,7 +328,11 @@ impl Plot {
         self.ramp.start = self.last_measurement;
 
         let ticks = SYSCLOCK.get_ticks();
-        if self.last_target_textbox_update.map_or(true, |x| delta(&x, &ticks).to_msecs() > 1000/10) {
+        let is_up = match touch_event {
+            TouchEvent::TouchUp(_) => true,
+            _ => false,
+        };
+        if is_up || self.last_target_textbox_update.map_or(true, |x| delta(&x, &ticks).to_msecs() > 1000/10) {
             self.last_target_textbox_update = Some(ticks);
             self.target_textbox.redraw(rtval_format(TARGET_LABEL, LABEL_LEN, self.ramp.end).as_str(), |p,c| {
                 lcd.draw_point_color(p, Layer::Layer2, c.to_argb1555());
