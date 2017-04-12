@@ -148,9 +148,6 @@ impl Plot {
         lcd.fill_rect_color(Y_PX_DRAG_RANGE, Layer::Layer1, self.drag_zone_color.to_argb1555());
         lcd.fill_rect_color(X_PX_DRAG_RANGE, Layer::Layer1, self.drag_zone_color.to_argb1555());
 
-        lcd.draw_line_color(x_axis_line, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
-        lcd.draw_line_color(y_axis_line, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
-
         let mut tb = TextBox{
             canvas: Rect{origin:Point{x:0, y:0}, width: 18, height: 14},
             font: self.axis_font,
@@ -229,6 +226,9 @@ impl Plot {
 
             y_tick += Y_TICK_DIST;
         }
+
+        lcd.draw_line_color(x_axis_line, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
+        lcd.draw_line_color(y_axis_line, Layer::Layer1, self.axis_color.to_argb1555(), SOLID);
     }
 
     pub fn add_measurement(&mut self, measurement: TimeTemp, lcd: &mut Lcd) {
