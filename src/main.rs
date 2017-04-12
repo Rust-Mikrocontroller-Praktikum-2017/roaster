@@ -283,6 +283,7 @@ fn temp_sensor_init_spi2(gpio: &mut Gpio, spi_2: &'static mut Spi) -> Max6675 {
                                gpio::Resistor::NoPull)
         .expect("Could not configure sck");
 
+    // TODO the MOSI pin is not necessarily necessary for MAX6675
     gpio.to_alternate_function(mosi_pin,
                                gpio::AlternateFunction::AF5,
                                gpio::OutputType::PushPull,
@@ -290,7 +291,6 @@ fn temp_sensor_init_spi2(gpio: &mut Gpio, spi_2: &'static mut Spi) -> Max6675 {
                                gpio::Resistor::NoPull)
         .expect("Could not configure mosi");
 
-    // TODO the MISO pin is not necessarily necessary for MAX6675
     gpio.to_alternate_function(miso_pin,
                                gpio::AlternateFunction::AF5,
                                gpio::OutputType::PushPull,
