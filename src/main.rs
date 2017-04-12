@@ -272,23 +272,11 @@ fn main(hw: board::Hardware) -> ! {
                 None | Some(TouchUp(_)) => TouchDown(touch),
             };
 
+            //Do not allow changing ramp in stopped state
             match state_button.state() {
                 State::RUNNING | State::RESETTED =>
                     plot.handle_touch(touch_event, &mut lcd),
                 _ => {},
-            }
-
-            if let Some(new_state) = state_button.handle_touch(touch_event, &mut lcd) {
-                match new_state {
-                    State::RESETTED => {
-                        break 'mainloop;
-                    },
-                    State::RUNNING => {
-                        measurement_start_system_time = SYSCLOCK.get_ticks();
-                        last_measurement_system_time = measurement_start_system_time;
-                    },
-                    _ => {},
-                }
             }
 
             last_touch_event = Some(touch_event);
@@ -300,7 +288,18 @@ fn main(hw: board::Hardware) -> ! {
 
             let touch_event = match last_touch_event.unwrap() {
                 TouchDown(t) | TouchMove(t) if time::delta(&ticks,&t.time).to_msecs() > 200 => {
-                    state_button.handle_touch(TouchUp(t), &mut lcd);
+                    if let Some(new_state) = state_button.handle_touch(TouchUp(t), &mut lcd) {
+                        match new_state {
+                            State::RESETTED => {
+                                break 'mainloop;
+                            },
+                            State::RUNNING => {
+                                measurement_start_system_time = SYSCLOCK.get_ticks();
+                                last_measurement_system_time = measurement_start_system_time;
+                            },
+                            _ => {},
+                        }
+                    }
                     plot.handle_touch(TouchUp(t), &mut lcd);
                     None
                 },
