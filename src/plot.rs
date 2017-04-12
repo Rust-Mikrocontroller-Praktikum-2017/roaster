@@ -1,6 +1,6 @@
 use model::TimeTemp;
 use stm32f7::lcd::{Lcd, Color, Layer, Point, Line, Rect,TextBox,Font,Alignment};
-use model::{Range, Time, Temperature};
+use model::{Range, Time, Temperature, Touch};
 use time::{TickTime,delta};
 use ramp::Ramp;
 use util;
@@ -16,12 +16,6 @@ pub struct Plot {
     axis_font: &'static Font<'static>,
     ramp: Ramp,
     last_ramp_line: Line,
-}
-
-#[derive(Clone,Copy)]
-pub struct Touch {
-    pub location: Point,
-    pub time: TickTime,
 }
 
 #[derive(Clone,Copy,PartialEq)]

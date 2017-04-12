@@ -229,7 +229,7 @@ fn main(hw: board::Hardware) -> ! {
 
         for touch in &touch::touches(&mut i2c_3).unwrap() {
 
-            let touch = plot::Touch{
+            let touch = model::Touch{
                 location: Point{
                     x: touch.x,
                     y: touch.y

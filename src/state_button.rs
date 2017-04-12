@@ -1,6 +1,6 @@
 use lcd;
-use plot;
 use time;
+use model;
 
 #[derive(Copy, Clone)]
 pub enum State {
@@ -54,7 +54,7 @@ impl StateButton {
 
     ///Handles touches
     ///Returns Some(new_state) if state was changed, else None
-    pub fn handle_touch(&mut self, touch: plot::Touch) -> Option<State> { //TODO move touch out of plot
+    pub fn handle_touch(&mut self, touch: model::Touch) -> Option<State> { //TODO move touch out of plot
         if self.rect.contains_point(&touch.location) {
 
             //Is this the first touch or has some time passed since the last touch
