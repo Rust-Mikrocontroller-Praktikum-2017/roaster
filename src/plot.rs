@@ -1,7 +1,7 @@
 use model::TimeTemp;
 use stm32f7::lcd::*;
 //{Lcd, Color, Layer, Point, Line, Rect,TextBox,Font,Alignment,CLEAR_COLOR};
-use model::{Range, Time, Temperature, Touch};
+use model::{Range, Time, Temperature, Touch,TouchEvent};
 use time::{TickTime,delta,SYSCLOCK,ClockSource};
 use ramp::Ramp;
 use util;
@@ -294,7 +294,13 @@ impl Plot {
         self.last_ramp_line = line;
     }
 
-    pub fn handle_touch(&mut self, touch: Touch, lcd: &mut Lcd) {
+    pub fn handle_touch(&mut self, touch_event: TouchEvent, lcd: &mut Lcd) {
+
+        if let TouchEvent::TouchUp(_) = touch_event {
+            return;
+        }
+
+        let touch = touch_event.touch();
 
         let drag = self.get_drag_gesture(touch);
         if let None = drag {

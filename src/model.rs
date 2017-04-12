@@ -45,7 +45,23 @@ impl<T: PartialOrd + Sub + Copy + Into<f32>> Range<T> {
 }
 
 #[derive(Clone,Copy)]
+pub enum TouchEvent {
+    TouchDown(Touch),
+    TouchMove(Touch),
+    TouchUp(Touch),
+}
+
+#[derive(Clone,Copy)]
 pub struct Touch {
     pub location: lcd::Point,
     pub time: time::TickTime,
+}
+
+use self::TouchEvent::*;
+impl TouchEvent {
+    pub fn touch(self) -> Touch {
+        match self {
+            TouchDown(t) | TouchMove(t) | TouchUp(t) => t,
+        }
+    }
 }

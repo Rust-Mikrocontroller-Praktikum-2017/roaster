@@ -28,6 +28,8 @@ use util::*;
 use plot::DragDirection;
 use embedded::util::delay;
 
+use model::TouchEvent::*;
+
 use collections::*;
 
 use collections::boxed::Box;
@@ -201,6 +203,8 @@ fn main(hw: board::Hardware) -> ! {
     );
     state_button.render(&mut lcd);
 
+    let mut last_touch_event = None;
+
     'mainloop: loop {
 
         let ticks = SYSCLOCK.get_ticks();
@@ -250,8 +254,10 @@ fn main(hw: board::Hardware) -> ! {
         pwm_gpio.set(ticks.to_msecs() % 1000 < duty_cycle);
 
         // poll for new touch data
-
+        let mut touches = false;
         for touch in &touch::touches(&mut i2c_3).unwrap() {
+
+            touches = true;
 
             let touch = model::Touch{
                 location: Point{
@@ -261,13 +267,18 @@ fn main(hw: board::Hardware) -> ! {
                 time: ticks
             };
 
+            let touch_event = match last_touch_event {
+                Some(TouchDown(_)) | Some(TouchMove(_)) => TouchMove(touch),
+                None | Some(TouchUp(_)) => TouchDown(touch),
+            };
+
             match state_button.state() {
                 State::RUNNING | State::RESETTED =>
-                    plot.handle_touch(touch, &mut lcd),
+                    plot.handle_touch(touch_event, &mut lcd),
                 _ => {},
             }
 
-            if let Some(new_state) = state_button.handle_touch(touch) {
+            if let Some(new_state) = state_button.handle_touch(touch_event, &mut lcd) {
                 match new_state {
                     State::RESETTED => {
                         break 'mainloop;
@@ -278,15 +289,31 @@ fn main(hw: board::Hardware) -> ! {
                     },
                     _ => {},
                 }
-                state_button.render(&mut lcd);
             }
 
+            last_touch_event = Some(touch_event);
 
+        }
+
+        // Deliver touch-up events
+        if !touches && last_touch_event.is_some() {
+
+            let touch_event = match last_touch_event.unwrap() {
+                TouchDown(t) | TouchMove(t) if time::delta(&ticks,&t.time).to_msecs() > 200 => {
+                    state_button.handle_touch(TouchUp(t), &mut lcd);
+                    plot.handle_touch(TouchUp(t), &mut lcd);
+                    None
+                },
+                x => Some(x),
+            };
+
+            last_touch_event = touch_event;
         }
 
     }
 
     }
+
 
 }
 

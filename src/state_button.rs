@@ -54,17 +54,21 @@ impl StateButton {
 
     ///Handles touches
     ///Returns Some(new_state) if state was changed, else None
-    pub fn handle_touch(&mut self, touch: model::Touch) -> Option<State> { //TODO move touch out of plot
+    pub fn handle_touch(&mut self, touch_event: model::TouchEvent, lcd: &mut lcd::Lcd) -> Option<State> { //TODO move touch out of plot
+
+        let touch = match touch_event {
+            model::TouchEvent::TouchUp(t) => t,
+            _          => return None,
+        };
+
         let mut result = None;
         if self.rect.contains_point(&touch.location) {
-            //Is this the first touch or has some time passed since the last touch
-            if self.last_touch_time.map_or(true, |last_touch_time| time::delta(&touch.time, &last_touch_time).to_msecs() > 400) {
-                self.state = next_state(self.state);
-                result = Some(self.state);
-            }
+            self.state = next_state(self.state);
+            self.render(lcd);
+            result = Some(self.state);
         }
-        self.last_touch_time = Some(touch.time);
         result
+
     }
 
 }
