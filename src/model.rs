@@ -13,6 +13,7 @@ pub struct TimeTemp {
     pub temp: Temperature,
 }
 
+#[derive(Clone, Copy)]
 pub struct Range<T> {
     pub from: T,
     pub to: T

@@ -31,8 +31,8 @@ struct Drag {
     direction: DragDirection,
 }
 
-const X_PX_RANGE: Range<u16> = Range{from: 24, to: 460};
-const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 20};
+pub const X_PX_RANGE: Range<u16> = Range{from: 24, to: 460};
+pub const Y_PX_RANGE: Range<u16> = Range{from: 252, to: 20};
 
 const X_PX_DRAG_RANGE: Rect = Rect{ // TODO
     origin: Point{ x: 0, y: 232},
@@ -69,12 +69,16 @@ impl Plot {
         // TODO assert drag_horizontal_zone and drag_vertical_zone are not overlapping
     }
 
-    fn transform_time(&self, time: Time) -> u16 {
-        ((X_PX_RANGE.from as f32) + ((X_PX_RANGE.signed_size() as f32) / self.x_range.signed_size()) * (time - self.x_range.from)) as u16
+    pub fn transform_ranges(from_range: Range<f32>, to_range: Range<u16>, value: f32) -> u16 {
+        ((to_range.from as f32) + ((to_range.signed_size() as f32) / from_range.signed_size()) * (value - from_range.from)) as u16
     }
 
-    fn transform_temp(&self, temp: Temperature) -> u16 {
-        ((Y_PX_RANGE.from as f32) + ((Y_PX_RANGE.signed_size() as f32) / self.y_range.signed_size()) * (temp - self.y_range.from)) as u16
+    pub fn transform_time(&self, time: Time) -> u16 {
+        Plot::transform_ranges(self.x_range, X_PX_RANGE, time)
+    }
+
+    pub fn transform_temp(&self, temp: Temperature) -> u16 {
+        Plot::transform_ranges(self.y_range, Y_PX_RANGE, temp)
     }
 
     pub fn transform(&self, measurement: &TimeTemp) -> Point {
