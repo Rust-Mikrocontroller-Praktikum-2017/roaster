@@ -1,7 +1,8 @@
 [package]
 name = "roaster"
 version = "0.1.0"
-authors = ["Christian Schwarz <me@cschwarz.com>"]
+authors = ["Anton Schirg <anton.schirg@posteo.de>", "Christian Schwarz <me@cschwarz.com>"]
+license = "MIT"
 
 [dependencies]
 cortex-m = "0.1.4"

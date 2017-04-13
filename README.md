@@ -36,4 +36,9 @@ xargo build
 
 # Licenses
 
+This project is licensed under the terms found in the LICENSE file.
+
+## Vendored Work
+
+- [Leak Crate(`src/leak.rs`)](https://raw.githubusercontent.com/jmesmon/leak/master/src/lib.rs)
 - [Roboto Mono Bold Font](https://github.com/google/fonts/blob/master/apache/robotomono/LICENSE.txt)
